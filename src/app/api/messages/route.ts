@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
+import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
 
 const MarkReadSchema = z.object({
   ids: z.array(z.string()),
@@ -14,6 +15,11 @@ type MarkReadRequest = z.infer<typeof MarkReadSchema>;
  * Query params: unread_only (boolean), since (timestamp)
  */
 export async function GET(request: NextRequest) {
+  const authResult = validateAuth(request);
+  if (!authResult.valid) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders(request) });
+  }
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const unreadOnly = searchParams.get('unread_only') === 'true';
@@ -36,18 +42,14 @@ export async function GET(request: NextRequest) {
       { messages },
       {
         status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(request),
       }
     );
   } catch (error) {
     console.error('Error fetching messages:', error);
     return NextResponse.json(
       { error: 'Failed to fetch messages' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders(request) }
     );
   }
 }
@@ -57,6 +59,18 @@ export async function GET(request: NextRequest) {
  * Mark messages as read
  */
 export async function POST(request: NextRequest) {
+  const authResult = validateAuth(request);
+  if (!authResult.valid) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders(request) });
+  }
+
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    const headers = new Headers(corsHeaders(request));
+    headers.set('Retry-After', String(rateLimitResult.retryAfterSeconds ?? 1));
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers });
+  }
+
   try {
     const body = await request.json();
     const data = MarkReadSchema.parse(body);
@@ -75,25 +89,21 @@ export async function POST(request: NextRequest) {
       { success: true, marked: successCount, total: data.ids.length },
       {
         status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(request),
       }
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Invalid request body', details: error.issues },
-        { status: 400 }
+        { status: 400, headers: corsHeaders(request) }
       );
     }
 
     console.error('Error marking messages as read:', error);
     return NextResponse.json(
       { error: 'Failed to mark messages as read' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders(request) }
     );
   }
 }
@@ -102,13 +112,9 @@ export async function POST(request: NextRequest) {
  * OPTIONS /api/messages
  * Handle CORS preflight
  */
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
+    headers: corsHeaders(request),
   });
 }

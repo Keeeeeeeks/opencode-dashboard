@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
+import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
 
 // Validation schema for events
 const EventSchema = z.object({
@@ -16,6 +17,18 @@ type Event = z.infer<typeof EventSchema>;
  * Receives events from oh-my-opencode
  */
 export async function POST(request: NextRequest) {
+  const authResult = validateAuth(request);
+  if (!authResult.valid) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders(request) });
+  }
+
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    const headers = new Headers(corsHeaders(request));
+    headers.set('Retry-After', String(rateLimitResult.retryAfterSeconds ?? 1));
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers });
+  }
+
   try {
     const body = await request.json();
     const event = EventSchema.parse(body);
@@ -63,27 +76,23 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       { success: true, event },
-      { 
+      {
         status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': 'localhost:*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(request),
       }
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Invalid request body', details: error.issues },
-        { status: 400 }
+        { status: 400, headers: corsHeaders(request) }
       );
     }
 
     console.error('Event processing error:', error);
     return NextResponse.json(
       { error: 'Failed to process event' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders(request) }
     );
   }
 }
@@ -92,13 +101,9 @@ export async function POST(request: NextRequest) {
  * OPTIONS /api/events
  * Handle CORS preflight
  */
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
+    headers: corsHeaders(request),
   });
 }
