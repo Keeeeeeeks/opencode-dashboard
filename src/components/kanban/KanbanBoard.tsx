@@ -67,20 +67,25 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-children">
         {columns.map((status) => (
           <div
             key={status}
-            className="min-h-[500px] rounded-lg border border-t-4 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 animate-pulse"
+            className="min-h-[500px] rounded-xl border-t-2"
+            style={{
+              background: 'var(--card)',
+              borderColor: 'var(--border)',
+              borderTop: '2px solid var(--border-strong)',
+            }}
           >
-            <div className="p-3 border-b dark:border-slate-700">
-              <div className="h-5 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+            <div className="p-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div className="h-5 w-24 rounded animate-skeleton" />
             </div>
             <div className="p-2 space-y-2">
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="h-24 bg-slate-200 dark:bg-slate-800 rounded-lg"
+                  className="h-24 rounded-lg animate-skeleton"
                 />
               ))}
             </div>
