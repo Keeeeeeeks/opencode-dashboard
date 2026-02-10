@@ -10,6 +10,14 @@
  */
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
+const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY || '';
+
+function getAuthHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${DASHBOARD_API_KEY}`,
+  };
+}
 
 interface Todo {
   id: string;
@@ -30,7 +38,7 @@ async function sendEvent(type: EventType, payload: Record<string, unknown>, sess
   try {
     const response = await fetch(`${DASHBOARD_URL}/api/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         type,
         payload,
@@ -51,7 +59,7 @@ async function syncTodos(todos: Todo[], sessionId?: string) {
     for (const todo of todos) {
       await fetch(`${DASHBOARD_URL}/api/todos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           id: todo.id,
           content: todo.content,
@@ -108,7 +116,7 @@ export const dashboardHook = {
     try {
       await fetch(`${DASHBOARD_URL}/api/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           id: sessionId,
           name: `Session ${new Date().toLocaleString()}`,

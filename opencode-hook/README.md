@@ -29,11 +29,14 @@ In your `~/.opencode/config.json` or project's `.opencode/config.json`:
 
 ## Configuration
 
-Set the `DASHBOARD_URL` environment variable to point to your dashboard:
+Set these environment variables before running the hook:
 
 ```bash
 export DASHBOARD_URL=http://localhost:3000
+export DASHBOARD_API_KEY=your_shared_secret
 ```
+
+`DASHBOARD_API_KEY` must match the dashboard server's `DASHBOARD_API_KEY` value and is sent as a Bearer token on all hook API requests.
 
 ## Events Sent
 
