@@ -4,15 +4,41 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const DATA_DIR = path.join(os.homedir(), '.opencode-dashboard');
+const DEFAULT_DATA_DIR = path.join(os.homedir(), '.opencode-dashboard');
+const DATA_DIR = resolveDataDir();
 const KEY_FILE = path.join(DATA_DIR, 'key');
 
 let cachedKey: Uint8Array | null = null;
+
+function resolveDataDir(): string {
+  const configured = process.env.DATA_DIR?.trim();
+  if (!configured) {
+    return DEFAULT_DATA_DIR;
+  }
+
+  if (configured.startsWith('~/')) {
+    return path.join(os.homedir(), configured.slice(2));
+  }
+
+  return configured;
+}
+
+function enforcePermissions(targetPath: string, expectedMode: number, targetType: 'file' | 'directory'): void {
+  const actualMode = fs.statSync(targetPath).mode & 0o777;
+  if (actualMode !== expectedMode) {
+    console.warn(
+      `[encryption] Insecure ${targetType} permissions on ${targetPath}: ${actualMode.toString(8)}. Fixing to ${expectedMode.toString(8)}.`
+    );
+    fs.chmodSync(targetPath, expectedMode);
+  }
+}
 
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   }
+
+  enforcePermissions(DATA_DIR, 0o700, 'directory');
 }
 
 function generateKey(): Uint8Array {
@@ -27,6 +53,7 @@ function loadOrCreateKey(): Uint8Array {
   ensureDataDir();
 
   if (fs.existsSync(KEY_FILE)) {
+    enforcePermissions(KEY_FILE, 0o600, 'file');
     const keyData = fs.readFileSync(KEY_FILE, 'utf-8');
     cachedKey = decodeBase64(keyData);
     return cachedKey;
