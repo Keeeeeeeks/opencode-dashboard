@@ -3,8 +3,17 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useDashboardStore } from '@/stores/dashboard';
 
-const API_BASE = '';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const POLL_INTERVAL = 3000;
+const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
+
+function authHeaders(): HeadersInit {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (API_KEY) {
+    headers['Authorization'] = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
 
 export function usePolling() {
   const {
@@ -29,8 +38,8 @@ export function usePolling() {
       }
 
       const [todosRes, messagesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/todos?${todosParams}`),
-        fetch(`${API_BASE}/api/messages`),
+        fetch(`${API_BASE}/api/todos?${todosParams}`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/messages`, { headers: authHeaders() }),
       ]);
 
       if (todosRes.ok) {
@@ -69,7 +78,7 @@ export function usePolling() {
       try {
         const res = await fetch(`${API_BASE}/api/todos`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ id, status }),
         });
 
@@ -88,7 +97,7 @@ export function usePolling() {
       try {
         const res = await fetch(`${API_BASE}/api/messages`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ ids: ids.map(String) }),
         });
 

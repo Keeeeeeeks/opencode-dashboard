@@ -115,6 +115,9 @@ Reference docs:
   - Markdown rendering: `react-native-markdown-display` or similar
 - [ ] **3.8** Track agent "age" — computed from `agents.created_at`
 - [ ] **3.9** Track agent hierarchy — `parent_agent_id` for sub-agent tree view
+- [ ] **3.10** Track OpenClaw <-> oh-my-opencode integration release status
+  - Current blocker: upstream oh-my-opencode release for OpenClaw callback integration is not live yet
+  - Once released, wire in the new run/integration flags and update hook docs + dashboard event flow
 
 ---
 

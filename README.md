@@ -57,7 +57,8 @@ Real-time Kanban board and encrypted message feed for tracking oh-my-opencode ag
 │         │                          │                    │
 │  ┌──────┴──────────────────────────┴───────────────┐    │
 │  │  Tailscale Serve                                │    │
-│  │  https://mac-mini.<tailnet>.ts.net  ◄── proxy ──┤    │
+│  │  /          → 127.0.0.1:18789  (OpenClaw)       │    │
+│  │  /opencode  → 127.0.0.1:3000   (Dashboard)     │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
          ▲                          ▲
@@ -70,7 +71,7 @@ Real-time Kanban board and encrypted message feed for tracking oh-my-opencode ag
     └──────────┘             └─────────────┘
 ```
 
-**Key design principle**: The dashboard and OpenClaw gateway both bind to `127.0.0.1` only. Tailscale Serve proxies HTTPS traffic from your tailnet to localhost — no ports are exposed on the LAN or internet.
+**Key design principle**: Both services bind to `127.0.0.1` only. Tailscale Serve proxies HTTPS traffic from your tailnet to localhost — no ports are exposed on the LAN or internet.
 
 ---
 
@@ -108,9 +109,14 @@ bun --version    # Should be 1.0+
 git --version    # Should be 2.39+
 ```
 
-### Optional: Create a dedicated user
+### Optional (advanced): Dedicated runtime user
 
-For better isolation, run the dashboard and OpenClaw under a separate macOS user:
+Default recommendation: run install + onboarding as your normal logged-in macOS GUI user.
+
+OpenClaw onboarding on macOS depends on per-user TCC permissions (Accessibility, Screen Recording, Automation, Notifications, etc.).
+If you switch to a separate non-admin user too early, onboarding commonly fails or misses required permissions.
+
+Use a dedicated `opagent` user only for hardened runtime separation after OpenClaw is already installed/onboarded and working:
 
 ```bash
 # Create user (requires admin)
@@ -126,9 +132,11 @@ sudo chown opagent:staff /Users/opagent
 # Set password
 sudo dscl . -passwd /Users/opagent <password>
 
-# Switch to the user
+# Optional: switch after OpenClaw onboarding is complete
 su - opagent
 ```
+
+If you use `opagent`, keep OpenClaw in the original onboarded user context and run the dashboard service under `opagent`.
 
 ---
 
@@ -176,6 +184,25 @@ tailscale ip -4
 # Prints just the IPv4 address
 ```
 
+### Find your `<your-tailnet>` value
+
+Use one of these methods:
+
+```bash
+# Recommended (requires jq)
+tailscale status --json | jq -r '.MagicDNSSuffix'
+# Example output: cat-crocodile.ts.net
+
+# Without jq: print JSON and look for MagicDNSSuffix
+tailscale status --json
+```
+
+For URLs like `https://mac-mini.<your-tailnet>.ts.net`, your `<your-tailnet>` is the suffix without `.ts.net`.
+Example: `cat-crocodile.ts.net` -> `<your-tailnet>` is `cat-crocodile`.
+
+You can also find it in the Tailscale admin console DNS page:
+`https://login.tailscale.com/admin/dns`
+
 ### Enable MagicDNS and HTTPS
 
 MagicDNS is enabled by default on tailnets created after October 2022. To verify:
@@ -189,6 +216,9 @@ MagicDNS is enabled by default on tailnets created after October 2022. To verify
 ---
 
 ## Step 3 — Install & Configure OpenClaw
+
+Run this step as the same logged-in macOS user that will own OpenClaw permissions and onboarding.
+Do not switch to `opagent` before this step.
 
 ### Install
 
@@ -360,114 +390,120 @@ curl -s http://127.0.0.1:3000/api/sessions
 
 ---
 
-## Step 5 — Expose the Dashboard via Tailscale Serve
+## Step 5 — Expose via Tailscale Serve
 
-This is the key step that makes the dashboard accessible from your phone and laptop **without** opening any ports.
+This makes both the OpenClaw control UI and the dashboard accessible from your phone and laptop **without** opening any ports.
 
-```bash
-tailscale serve 3000
-```
-
-**What this does:**
-
-| Before | After |
-|--------|-------|
-| Dashboard only at `http://127.0.0.1:3000` | Also at `https://mac-mini.<tailnet>.ts.net` |
-| No HTTPS | Automatic Let's Encrypt HTTPS |
-| No identity info | Adds `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-User-Profile-Pic` headers |
-| Only accessible locally | Accessible from any device in your tailnet |
-| **Not** accessible from internet | Still **not** accessible from internet |
-
-### Run Tailscale Serve persistently
-
-By default `tailscale serve` runs in the foreground. To make it persistent:
+### Configure two routes
 
 ```bash
-# Background mode (survives terminal close)
-tailscale serve --bg 3000
+# OpenClaw control UI at the root
+tailscale serve --bg --set-path / 18789
+
+# OpenCode Dashboard at /opencode
+tailscale serve --bg --set-path /opencode 3000
 ```
+
+This gives you:
+
+| URL | Service |
+|-----|---------|
+| `https://<hostname>.<tailnet>.ts.net/` | OpenClaw control UI |
+| `https://<hostname>.<tailnet>.ts.net/opencode` | OpenCode Dashboard |
+
+### Important: set ASSET_PREFIX
+
+When serving the dashboard at a subpath, Next.js needs to know where to load CSS/JS from. Add to `.env.local`:
+
+```env
+ASSET_PREFIX=/opencode
+```
+
+Then rebuild and restart:
+
+```bash
+bun run build && bun run start
+```
+
+Without this, the page HTML loads but styles and interactivity will be missing.
 
 ### Verify
 
-From the Mac Mini itself:
 ```bash
 tailscale serve status
-# Should show: https://mac-mini.<tailnet>.ts.net -> http://127.0.0.1:3000
+# Should show:
+#   https://<hostname>.<tailnet>.ts.net/
+#   |-- proxy http://127.0.0.1:18789
+#
+#   https://<hostname>.<tailnet>.ts.net/opencode
+#   |-- proxy http://127.0.0.1:3000
 ```
 
 From another device in your tailnet:
-```bash
-curl https://mac-mini.<tailnet>.ts.net
+```
+https://<hostname>.<tailnet>.ts.net          → OpenClaw
+https://<hostname>.<tailnet>.ts.net/opencode → Dashboard
 ```
 
 ---
 
-## Step 6 — Connect Clients
+## Step 6 — Add Devices to Your Tailnet
+
+Every device that needs to access the dashboard must join your Tailscale network. The key rule: **sign in with the same identity provider** you used on the Mac Mini.
 
 ### iPhone / iPad
 
 1. Install **Tailscale** from the [App Store](https://apps.apple.com/app/tailscale/id1470499037)
-2. Open the app and sign in with the **same identity provider** you used on the Mac Mini
-3. Enable the VPN when prompted
-4. Open Safari and go to:
-   ```
-   https://mac-mini.<your-tailnet>.ts.net
-   ```
+2. Open the app → **Sign in** with the same account (Google, GitHub, etc.)
+3. Allow the VPN configuration when prompted
+4. Open Safari and visit:
+   - **OpenClaw**: `https://<hostname>.<tailnet>.ts.net`
+   - **Dashboard**: `https://<hostname>.<tailnet>.ts.net/opencode`
 
-**That's it.** The dashboard loads over Tailscale's encrypted WireGuard tunnel with auto-provisioned HTTPS.
+> **VPN On Demand** (recommended): iOS Settings → VPN → Tailscale → Connect On Demand → ON. This keeps the tunnel alive so pages load instantly.
 
-> **VPN On Demand**: In Tailscale iOS settings, enable "VPN On Demand" so the tunnel reconnects automatically. Go to iOS Settings → VPN → Tailscale → Connect On Demand → toggle ON.
-
-### Laptop / Desktop (macOS)
+### macOS
 
 ```bash
-# Install Tailscale
 brew install --cask tailscale
-
-# Authenticate (same identity provider)
 tailscale up
-
-# Access the dashboard
-open https://mac-mini.<your-tailnet>.ts.net
-
-# SSH into Mac Mini (if Tailscale SSH is enabled)
-ssh your-username@mac-mini
+open https://<hostname>.<tailnet>.ts.net/opencode
 ```
 
-### Laptop / Desktop (Linux)
+### Linux
 
 ```bash
-# Install Tailscale
 curl -fsSL https://tailscale.com/install.sh | sh
-
-# Authenticate
 sudo tailscale up
-
-# Access the dashboard
-xdg-open https://mac-mini.<your-tailnet>.ts.net
+xdg-open https://<hostname>.<tailnet>.ts.net/opencode
 ```
 
-### Laptop / Desktop (Windows)
+### Windows
 
-1. Download Tailscale from [tailscale.com/download/windows](https://tailscale.com/download/windows)
+1. Download from [tailscale.com/download/windows](https://tailscale.com/download/windows)
 2. Sign in with the same identity provider
-3. Open a browser to `https://mac-mini.<your-tailnet>.ts.net`
+3. Open `https://<hostname>.<tailnet>.ts.net/opencode`
+
+### Verify a new device is connected
+
+On the Mac Mini:
+
+```bash
+tailscale status
+```
+
+Or check the admin console: [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines) — your new device should appear in the list.
 
 ### React Native / Expo mobile app
 
-Once Tailscale is connected on the device, the mobile app can reach the dashboard API directly:
+Once Tailscale is connected on the device, the app reaches the API directly:
 
 ```bash
 cd mobile
 bun install
-
-# Set the API URL to your Tailscale hostname
-export EXPO_PUBLIC_API_URL=https://mac-mini.<your-tailnet>.ts.net
-
+export EXPO_PUBLIC_API_URL=https://<hostname>.<tailnet>.ts.net
 bun run ios   # or bun run android
 ```
-
-The Tailscale VPN operates at the network layer — all apps on the device can reach tailnet addresses with no special configuration.
 
 ---
 
@@ -546,17 +582,64 @@ curl -s https://mac-mini.<your-tailnet>.ts.net/api/events \
 
 ---
 
+## Step 9 — OpenClaw Cron Jobs (Optional)
+
+Schedule OpenClaw to check the dashboard board on a recurring basis.
+
+### Check the board every 4 hours
+
+```bash
+openclaw cron add \
+  --name "Check dashboard board" \
+  --every 4h \
+  --message "Check the OpenCode Dashboard at http://127.0.0.1:3000/api/todos for any stale in_progress tasks or high-priority pending items. Summarize what you find." \
+  --announce
+```
+
+### Other useful cron examples
+
+```bash
+# Daily standup summary at 9am
+openclaw cron add \
+  --name "Daily board summary" \
+  --cron "0 9 * * *" \
+  --tz "America/Los_Angeles" \
+  --message "Summarize yesterday's completed tasks and today's pending tasks from http://127.0.0.1:3000/api/todos. Be concise." \
+  --announce
+
+# One-shot reminder
+openclaw cron add \
+  --name "Reminder: review PRs" \
+  --at "+2h" \
+  --message "Reminder: review open PRs on opencode-dashboard." \
+  --announce \
+  --delete-after-run
+```
+
+### Manage cron jobs
+
+```bash
+openclaw cron list           # List all jobs
+openclaw cron run <id>       # Test-run a job now
+openclaw cron disable <id>   # Pause a job
+openclaw cron enable <id>    # Resume a job
+openclaw cron rm <id>        # Delete a job
+```
+
+---
+
 ## API Reference
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `/api/events` | POST | Bearer token | Receive events from oh-my-opencode hook |
-| `/api/todos` | GET | — | Get all todos (query: `session_id`, `status`) |
-| `/api/todos` | POST | Bearer token | Create or update a todo |
-| `/api/messages` | GET | — | Get all messages (query: `unread_only`) |
-| `/api/messages` | POST | Bearer token | Mark messages as read |
-| `/api/sessions` | GET | — | List sessions |
-| `/api/sessions` | POST | Bearer token | Create or update a session |
+| `/api/events` | POST | Bearer | Receive events from oh-my-opencode hook |
+| `/api/todos` | GET | Bearer | Get all todos (query: `session_id`, `status`, `since`) |
+| `/api/todos` | POST | Bearer | Create or update a single todo |
+| `/api/todos` | PUT | Bearer | Batch create/update todos (`{ todos: [...] }`) |
+| `/api/messages` | GET | Bearer | Get all messages (query: `unread_only`, `since`) |
+| `/api/messages` | POST | Bearer | Mark messages as read |
+| `/api/sessions` | GET | Bearer | List sessions |
+| `/api/sessions` | POST | Bearer | Create a session |
 
 ---
 
@@ -572,37 +655,38 @@ curl -s https://mac-mini.<your-tailnet>.ts.net/api/events \
 | `RATE_LIMIT_MAX_REQUESTS` | No | `60` | Max requests per window per IP |
 | `DASHBOARD_URL` | No | `http://127.0.0.1:3000` | Used by opencode-hook (agent side) |
 | `DATA_DIR` | No | `~/.opencode-dashboard` | SQLite DB and encryption key location |
+| `ASSET_PREFIX` | No | — | Set to subpath when behind a reverse proxy (e.g. `/opencode`) |
 
 ---
 
 ## Security Hardening Checklist
 
-> **Status**: MVP. Address these items before daily use.
+> **Status**: Phase 0 complete. Most critical and high items addressed.
 
 ### Critical (before use)
 
-- [ ] **API authentication** — All POST endpoints must validate `Authorization: Bearer <DASHBOARD_API_KEY>`. Without this, anyone on your tailnet can write to the dashboard.
-- [ ] **Fix CORS** — Replace `Access-Control-Allow-Origin: *` with the `ALLOWED_ORIGINS` allowlist. The events route also has an invalid header value (`localhost:*`).
-- [ ] **Bind to loopback** — Confirm `HOST=127.0.0.1` in `.env.local`. Never set `HOST=0.0.0.0`.
+- [x] **API authentication** — All endpoints validate `Authorization: Bearer <DASHBOARD_API_KEY>` via timing-safe comparison.
+- [x] **Fix CORS** — `ALLOWED_ORIGINS` allowlist replaces wildcard `*`. `Authorization` included in allowed headers.
+- [x] **Bind to loopback** — `HOST=127.0.0.1` in `.env.local`. Never set `HOST=0.0.0.0`.
 
 ### High (before daily use)
 
-- [ ] **Rate limiting** — Protect POST endpoints with `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS`.
+- [x] **Rate limiting** — POST endpoints protected with sliding-window rate limiter (`RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS`).
 - [ ] **Validate the hook contract** — The hook in `opencode-hook/dashboard-hook.ts` was written speculatively. Verify against the actual oh-my-opencode hook API.
-- [ ] **Add auth to the hook** — The hook currently POSTs without auth headers. Update to send `Authorization: Bearer ${DASHBOARD_API_KEY}`.
+- [x] **Add auth to the hook** — Hook sends `Authorization: Bearer ${DASHBOARD_API_KEY}` on all requests.
 
 ### Medium (recommended)
 
 - [ ] **Replace polling with SSE** — Reduce latency and server load.
-- [ ] **Encryption key management** — The NaCl key at `~/.opencode-dashboard/key` is plaintext. On macOS, consider Keychain. At minimum verify `chmod 600`.
+- [x] **Encryption key management** — Key file enforced to `chmod 600`, data dir to `0o700`. `DATA_DIR` env var supported.
 - [ ] **Push notifications** — `expo-notifications` is imported but not wired up. Add FCM or APNs.
-- [ ] **Batch todo sync** — Hook sends sequential HTTP requests per todo; batch into one POST.
+- [x] **Batch todo sync** — `PUT /api/todos` accepts bulk upsert; hook batches all todos in one request with POST fallback.
 
 ### Low (nice to have)
 
 - [ ] **Migrate to PostgreSQL** — Needed for multi-device or multi-agent setups.
 - [ ] **Offline caching** — Mobile app has no offline support.
-- [ ] **Audit logging** — Log auth failures, rate limit hits, unusual patterns.
+- [x] **Audit logging** — Structured JSON logs for auth failures, rate limit hits, and auth successes.
 
 ---
 

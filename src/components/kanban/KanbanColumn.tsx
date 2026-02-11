@@ -6,11 +6,11 @@ import { cn } from '@/lib/utils';
 import { KanbanCard } from './KanbanCard';
 import type { KanbanColumnProps, Todo } from './types';
 
-const statusColors: Record<Todo['status'], string> = {
-  pending: 'border-t-slate-400',
-  in_progress: 'border-t-blue-500',
-  completed: 'border-t-green-500',
-  cancelled: 'border-t-red-500',
+const statusTopColors: Record<Todo['status'], string> = {
+  pending: '#71717a',
+  in_progress: '#3b82f6',
+  completed: '#22c55e',
+  cancelled: '#ef4444',
 };
 
 const statusLabels: Record<Todo['status'], string> = {
@@ -27,17 +27,43 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
     <div
       ref={setNodeRef}
       className={cn(
-        'flex flex-col min-h-[500px] rounded-lg border border-t-4 bg-slate-50 dark:bg-slate-900',
-        'dark:border-slate-700',
-        statusColors[status],
-        isOver && 'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-slate-900'
+        'flex flex-col min-h-[500px] rounded-xl transition-shadow',
+        isOver && 'ring-2 ring-offset-2'
       )}
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderTop: `2px solid ${statusTopColors[status]}`,
+        ...(isOver
+          ? {
+              ringColor: 'var(--accent)',
+              boxShadow: '0 0 0 2px var(--accent), var(--shadow-glow)',
+              outline: '2px solid var(--accent)',
+              outlineOffset: '2px',
+            }
+          : {}),
+      }}
     >
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white/80 backdrop-blur-sm p-3 dark:bg-slate-800/80 dark:border-slate-700">
-        <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+      <div
+        className="sticky top-0 z-10 flex items-center justify-between p-3 backdrop-blur-md rounded-t-xl"
+        style={{
+          background: 'var(--glass-bg)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <h3
+          className="font-semibold text-sm"
+          style={{ color: 'var(--text-strong)' }}
+        >
           {statusLabels[status] || title}
         </h3>
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+        <span
+          className="flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-medium"
+          style={{
+            background: 'var(--bg-hover)',
+            color: 'var(--muted)',
+          }}
+        >
           {todos.length}
         </span>
       </div>
@@ -45,7 +71,10 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
       <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex-1 p-2 space-y-2 overflow-y-auto">
           {todos.length === 0 ? (
-            <div className="flex h-32 items-center justify-center text-sm text-slate-400 dark:text-slate-500">
+            <div
+              className="flex h-32 items-center justify-center text-sm"
+              style={{ color: 'var(--muted)' }}
+            >
               No tasks
             </div>
           ) : (

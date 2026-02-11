@@ -10,6 +10,14 @@
  */
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
+const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY || '';
+
+function getAuthHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${DASHBOARD_API_KEY}`,
+  };
+}
 
 interface Todo {
   id: string;
@@ -30,7 +38,7 @@ async function sendEvent(type: EventType, payload: Record<string, unknown>, sess
   try {
     const response = await fetch(`${DASHBOARD_URL}/api/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         type,
         payload,
@@ -46,18 +54,42 @@ async function sendEvent(type: EventType, payload: Record<string, unknown>, sess
   }
 }
 
-async function syncTodos(todos: Todo[], sessionId?: string) {
+async function syncTodos(todos: Todo[], sessionId?: string, agentName?: string) {
   try {
+    const batchResponse = await fetch(`${DASHBOARD_URL}/api/todos`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        todos: todos.map((todo) => ({
+          id: todo.id,
+          content: todo.content,
+          status: todo.status,
+          priority: todo.priority,
+          session_id: sessionId,
+          agent: agentName,
+        })),
+      }),
+    });
+
+    if (batchResponse.ok) {
+      return;
+    }
+
+    console.warn(
+      `[Dashboard Hook] Batch todo sync failed with status ${batchResponse.status}, falling back to POST sync`
+    );
+
     for (const todo of todos) {
       await fetch(`${DASHBOARD_URL}/api/todos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           id: todo.id,
           content: todo.content,
           status: todo.status,
           priority: todo.priority,
           session_id: sessionId,
+          agent: agentName,
         }),
       });
     }
@@ -70,7 +102,7 @@ export const dashboardHook = {
   name: 'dashboard-hook',
   
   onTodoUpdate: async (todos: Todo[], context: HookContext) => {
-    await syncTodos(todos, context.sessionId);
+    await syncTodos(todos, context.sessionId, context.agentName);
     
     await sendEvent('todo_update', {
       count: todos.length,
@@ -108,7 +140,7 @@ export const dashboardHook = {
     try {
       await fetch(`${DASHBOARD_URL}/api/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           id: sessionId,
           name: `Session ${new Date().toLocaleString()}`,

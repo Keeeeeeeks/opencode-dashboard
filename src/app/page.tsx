@@ -11,13 +11,13 @@ import { cn } from '@/lib/utils';
 export default function Dashboard() {
   const { todos, messages, isConnected } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead } = usePolling();
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const dark = document.documentElement.classList.contains('dark');
-    setIsDark(dark);
+    const hasLight = document.documentElement.classList.contains('light');
+    setIsDark(!hasLight);
   }, []);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function Dashboard() {
   }, [todos, messages]);
 
   const toggleDark = () => {
-    document.documentElement.classList.toggle('dark');
+    document.documentElement.classList.toggle('light');
     setIsDark(!isDark);
   };
 
@@ -44,19 +44,35 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
-      <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-md dark:bg-slate-900/80 dark:border-slate-800">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+      <header
+        className="sticky top-0 z-50 border-b backdrop-blur-xl"
+        style={{
+          background: 'var(--chrome)',
+          borderColor: 'var(--border)',
+          height: 56,
+        }}
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex h-14 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-                <Activity className="h-5 w-5 text-white" />
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-lg"
+                style={{
+                  background: 'var(--accent-subtle)',
+                  boxShadow: '0 0 20px var(--accent-glow)',
+                }}
+              >
+                🦞
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
+                <h1
+                  className="text-base font-semibold tracking-tight"
+                  style={{ color: 'var(--text-strong)' }}
+                >
                   OpenCode Dashboard
                 </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
                   Agent work tracker
                 </p>
               </div>
@@ -65,26 +81,35 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span
-                  className={cn(
-                    'h-2 w-2 rounded-full',
-                    isConnected ? 'bg-green-500' : 'bg-red-500'
-                  )}
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    background: isConnected ? 'var(--ok)' : 'var(--danger)',
+                    boxShadow: isConnected
+                      ? '0 0 8px rgba(34, 197, 94, 0.4)'
+                      : '0 0 8px rgba(239, 68, 68, 0.4)',
+                  }}
                 />
-                <span className="text-xs text-slate-500 dark:text-slate-400">
+                <span className="text-xs" style={{ color: 'var(--muted)' }}>
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
 
               <button
                 onClick={toggleDark}
-                className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="rounded-lg p-2 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
 
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="md:hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="md:hidden rounded-lg p-2 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
@@ -93,14 +118,17 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 min-w-0">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              <h2
+                className="text-lg font-semibold tracking-tight"
+                style={{ color: 'var(--text-strong)' }}
+              >
                 Task Board
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
                 Drag tasks between columns to update status
               </p>
             </div>
@@ -114,15 +142,25 @@ export default function Dashboard() {
           <div
             className={cn(
               'w-full md:w-80 lg:w-96 shrink-0',
-              'fixed inset-y-0 right-0 z-40 bg-white dark:bg-slate-900 p-4 pt-20 md:p-0 md:pt-0',
-              'md:relative md:bg-transparent md:dark:bg-transparent',
+              'fixed inset-y-0 right-0 z-40 p-4 pt-20 md:p-0 md:pt-0',
+              'md:relative',
               'transform transition-transform duration-300 ease-in-out',
               'md:transform-none',
               sidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
             )}
+            style={{
+              background: sidebarOpen ? 'var(--bg)' : undefined,
+            }}
           >
             <div className="h-full md:sticky md:top-24">
-              <div className="h-[calc(100vh-8rem)] md:h-[calc(100vh-7rem)] bg-white dark:bg-slate-900 rounded-lg border dark:border-slate-800 p-4 shadow-sm">
+              <div
+                className="h-[calc(100vh-8rem)] md:h-[calc(100vh-7rem)] rounded-xl p-4"
+                style={{
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-md)',
+                }}
+              >
                 <MessageFeed
                   messages={messages}
                   onMarkAsRead={handleMarkAsRead}
@@ -134,7 +172,7 @@ export default function Dashboard() {
 
           {sidebarOpen && (
             <div
-              className="fixed inset-0 z-30 bg-black/50 md:hidden"
+              className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
               onClick={() => setSidebarOpen(false)}
             />
           )}
