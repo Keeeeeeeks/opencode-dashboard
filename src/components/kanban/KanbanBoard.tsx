@@ -17,7 +17,7 @@ import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import type { KanbanBoardProps, Todo } from './types';
 
-const columns: Todo['status'][] = ['pending', 'in_progress', 'completed'];
+const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'completed'];
 
 export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-children">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 stagger-children">
         {columns.map((status) => (
           <div
             key={status}
@@ -102,7 +102,7 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {columns.map((status) => (
           <KanbanColumn
             key={status}

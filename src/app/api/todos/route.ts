@@ -6,7 +6,7 @@ import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware
 const CreateTodoSchema = z.object({
   id: z.string().optional(),
   content: z.string(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']).optional(),
+  status: z.enum(['pending', 'in_progress', 'blocked', 'completed', 'cancelled']).optional(),
   priority: z.enum(['low', 'medium', 'high']).optional(),
   agent: z.string().optional(),
   session_id: z.string().optional(),
