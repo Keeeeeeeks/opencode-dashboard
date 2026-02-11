@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   assetPrefix: process.env.ASSET_PREFIX || undefined,
   env: {
     NEXT_PUBLIC_DASHBOARD_API_KEY: process.env.DASHBOARD_API_KEY || '',
+    NEXT_PUBLIC_API_BASE: process.env.ASSET_PREFIX || '',
   },
 };
 

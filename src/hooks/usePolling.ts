@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useDashboardStore } from '@/stores/dashboard';
 
-const API_BASE = '';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const POLL_INTERVAL = 3000;
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
 
