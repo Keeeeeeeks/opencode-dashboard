@@ -14,6 +14,7 @@ const statusTopColors: Record<Todo['status'], string> = {
   blocked: '#f59e0b',
   completed: '#22c55e',
   cancelled: '#ef4444',
+  icebox: '#38bdf8',
 };
 
 const statusLabels: Record<Todo['status'], string> = {
@@ -22,6 +23,7 @@ const statusLabels: Record<Todo['status'], string> = {
   blocked: 'Blocked',
   completed: 'Completed',
   cancelled: 'Cancelled',
+  icebox: 'Icebox',
 };
 
 export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanColumnProps) {

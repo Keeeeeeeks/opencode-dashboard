@@ -1,7 +1,7 @@
 export interface Todo {
   id: string;
   content: string;
-  status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox';
   priority: 'high' | 'medium' | 'low';
   agent?: string | null;
   session_id?: string | null;
