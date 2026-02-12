@@ -33,7 +33,7 @@ export default function Dashboard() {
     setIsDark(!isDark);
   };
 
-  const handleStatusChange = (id: string, newStatus: 'pending' | 'in_progress' | 'completed' | 'cancelled') => {
+  const handleStatusChange = (id: string, newStatus: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox') => {
     updateTodoStatus(id, newStatus);
     useDashboardStore.getState().updateTodoStatus(id, newStatus);
   };

@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KanbanCard } from './KanbanCard';
 import type { KanbanColumnProps, Todo } from './types';
@@ -9,25 +11,31 @@ import type { KanbanColumnProps, Todo } from './types';
 const statusTopColors: Record<Todo['status'], string> = {
   pending: '#71717a',
   in_progress: '#3b82f6',
+  blocked: '#f59e0b',
   completed: '#22c55e',
   cancelled: '#ef4444',
+  icebox: '#38bdf8',
 };
 
 const statusLabels: Record<Todo['status'], string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
+  blocked: 'Blocked',
   completed: 'Completed',
   cancelled: 'Cancelled',
+  icebox: 'Icebox',
 };
 
 export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'flex flex-col min-h-[500px] rounded-xl transition-shadow',
+        'flex flex-col rounded-xl transition-all',
+        !collapsed && 'min-h-[500px]',
         isOver && 'ring-2 ring-offset-2'
       )}
       style={{
@@ -45,18 +53,24 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
       }}
     >
       <div
-        className="sticky top-0 z-10 flex items-center justify-between p-3 backdrop-blur-md rounded-t-xl"
+        className="sticky top-0 z-10 flex items-center justify-between p-3 backdrop-blur-md rounded-t-xl cursor-pointer select-none"
         style={{
           background: 'var(--glass-bg)',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: collapsed ? 'none' : '1px solid var(--border)',
         }}
+        onClick={() => setCollapsed(!collapsed)}
       >
-        <h3
-          className="font-semibold text-sm"
-          style={{ color: 'var(--text-strong)' }}
-        >
-          {statusLabels[status] || title}
-        </h3>
+        <div className="flex items-center gap-1.5">
+          <span style={{ color: 'var(--muted)' }} className="transition-transform">
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </span>
+          <h3
+            className="font-semibold text-sm"
+            style={{ color: 'var(--text-strong)' }}
+          >
+            {statusLabels[status] || title}
+          </h3>
+        </div>
         <span
           className="flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-medium"
           style={{
@@ -68,20 +82,22 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
         </span>
       </div>
 
-      <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-          {todos.length === 0 ? (
-            <div
-              className="flex h-32 items-center justify-center text-sm"
-              style={{ color: 'var(--muted)' }}
-            >
-              No tasks
-            </div>
-          ) : (
-            todos.map((todo) => <KanbanCard key={todo.id} todo={todo} />)
-          )}
-        </div>
-      </SortableContext>
+      {!collapsed && (
+        <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+          <div className="flex-1 p-2 space-y-2 overflow-y-auto">
+            {todos.length === 0 ? (
+              <div
+                className="flex h-32 items-center justify-center text-sm"
+                style={{ color: 'var(--muted)' }}
+              >
+                No tasks
+              </div>
+            ) : (
+              todos.map((todo) => <KanbanCard key={todo.id} todo={todo} />)
+            )}
+          </div>
+        </SortableContext>
+      )}
     </div>
   );
 }
