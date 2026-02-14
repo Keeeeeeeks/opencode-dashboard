@@ -150,6 +150,37 @@ export const dashboardHook = {
       console.error('[Dashboard Hook] Error creating session:', error);
     }
   },
+
+  onWorkLogSummary: async (
+    summary: string,
+    context: HookContext & { tags?: string[]; summaryId?: string }
+  ) => {
+    try {
+      const response = await fetch(`${DASHBOARD_URL}/api/messages/create`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          type: 'worklog',
+          content: summary,
+          session_id: context.sessionId || null,
+          metadata: {
+            author: context.agentName || 'unknown',
+            tags: context.tags || [],
+            summary_id: context.summaryId,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(`[Dashboard Hook] Failed to post work log: ${response.status}`);
+      }
+
+      return response.ok;
+    } catch (error) {
+      console.error('[Dashboard Hook] Error posting work log:', error);
+      return false;
+    }
+  },
 };
 
 export default dashboardHook;

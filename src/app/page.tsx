@@ -1,16 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
 import { usePolling } from '@/hooks/usePolling';
-import { Activity, Moon, Sun, Menu, X } from 'lucide-react';
+import { Activity, Moon, Sun, Menu, X, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { NewTicketModal } from '@/components/kanban/NewTicketModal';
 
 export default function Dashboard() {
   const { todos, messages, isConnected } = useDashboardStore();
-  const { updateTodoStatus, markMessagesAsRead } = usePolling();
+  const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
+  const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +107,18 @@ export default function Dashboard() {
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
 
+              <Link
+                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/v2`}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
+                style={{
+                  background: 'var(--accent-subtle)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                }}
+              >
+                V2
+              </Link>
+
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="md:hidden rounded-lg p-2 transition-colors"
@@ -121,17 +136,37 @@ export default function Dashboard() {
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 min-w-0">
-            <div className="mb-4">
-              <h2
-                className="text-lg font-semibold tracking-tight"
-                style={{ color: 'var(--text-strong)' }}
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2
+                  className="text-lg font-semibold tracking-tight"
+                  style={{ color: 'var(--text-strong)' }}
+                >
+                  Task Board
+                </h2>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Drag tasks between columns to update status
+                </p>
+              </div>
+              <button
+                onClick={() => setNewTicketOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
+                style={{
+                  background: 'var(--accent)',
+                  color: '#fff',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
               >
-                Task Board
-              </h2>
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Drag tasks between columns to update status
-              </p>
+                <Plus className="h-4 w-4" />
+                New Ticket
+              </button>
             </div>
+            <NewTicketModal
+              open={newTicketOpen}
+              onClose={() => setNewTicketOpen(false)}
+              onCreated={() => fetchData()}
+            />
             <KanbanBoard
               todos={todos}
               onStatusChange={handleStatusChange}

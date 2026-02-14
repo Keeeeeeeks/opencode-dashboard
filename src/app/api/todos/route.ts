@@ -9,6 +9,7 @@ const CreateTodoSchema = z.object({
   status: z.enum(['pending', 'in_progress', 'blocked', 'completed', 'cancelled', 'icebox']).optional(),
   priority: z.enum(['low', 'medium', 'high']).optional(),
   agent: z.string().optional(),
+  project: z.string().nullable().optional(),
   session_id: z.string().optional(),
 });
 
@@ -38,11 +39,16 @@ export async function GET(request: NextRequest) {
     const sessionId = searchParams.get('session_id');
     const statusParam = searchParams.get('status');
     const sinceParam = searchParams.get('since');
+    const projectParam = searchParams.get('project');
 
     let todos = db.getAllTodos();
 
     if (sessionId) {
       todos = todos.filter((t) => t.session_id === sessionId);
+    }
+
+    if (projectParam) {
+      todos = todos.filter((t) => t.project === projectParam);
     }
 
     if (statusParam) {
@@ -102,6 +108,7 @@ export async function POST(request: NextRequest) {
         status: data.status || 'pending',
         priority: data.priority || 'medium',
         agent: data.agent || null,
+        project: data.project ?? null,
         session_id: data.session_id || null,
         updated_at: Date.now(),
       });
@@ -112,6 +119,7 @@ export async function POST(request: NextRequest) {
         status: data.status || 'pending',
         priority: data.priority || 'medium',
         agent: data.agent || null,
+        project: data.project ?? null,
         session_id: data.session_id || null,
       });
     }
@@ -170,6 +178,7 @@ export async function PUT(request: NextRequest) {
           status: todoData.status || 'pending',
           priority: todoData.priority || 'medium',
           agent: todoData.agent || null,
+          project: todoData.project ?? null,
           session_id: todoData.session_id || null,
           updated_at: Date.now(),
         });
@@ -181,6 +190,7 @@ export async function PUT(request: NextRequest) {
           status: todoData.status || 'pending',
           priority: todoData.priority || 'medium',
           agent: todoData.agent || null,
+          project: todoData.project ?? null,
           session_id: todoData.session_id || null,
         });
         results.push({ id: todoData.id, action: 'created' });

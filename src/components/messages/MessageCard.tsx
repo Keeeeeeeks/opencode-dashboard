@@ -1,9 +1,9 @@
 'use client';
 
 import { formatDistanceToNow } from 'date-fns';
-import { CheckCircle, AlertCircle, RefreshCw, MessageSquare, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { CheckCircle, AlertCircle, RefreshCw, MessageSquare, FileText, Check } from 'lucide-react';
 import type { MessageCardProps, Message } from './types';
+import { MessageContent } from './MessageContent';
 
 const typeConfig: Record<
   Message['type'],
@@ -28,6 +28,11 @@ const typeConfig: Record<
     icon: MessageSquare,
     color: '#14b8a6',
     borderColor: '#14b8a6',
+  },
+  worklog: {
+    icon: FileText,
+    color: '#a855f7',
+    borderColor: '#a855f7',
   },
 };
 
@@ -59,7 +64,7 @@ export function MessageCard({ message, onMarkAsRead }: MessageCardProps) {
 
         <div className="flex-1 min-w-0">
           <p className="text-sm" style={{ color: 'var(--text)' }}>
-            {message.content}
+            <MessageContent content={message.content} />
           </p>
 
           <div className="mt-2 flex items-center justify-between">

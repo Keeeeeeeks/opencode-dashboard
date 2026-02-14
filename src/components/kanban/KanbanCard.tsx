@@ -3,7 +3,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDistanceToNow } from 'date-fns';
-import { GripVertical, Clock, User } from 'lucide-react';
+import { GripVertical, Clock, User, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { KanbanCardProps, Todo } from './types';
 
@@ -89,6 +89,19 @@ export function KanbanCard({ todo, isDragging }: KanbanCardProps) {
               {todo.priority}
             </span>
             
+            {todo.project && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                style={{
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: '#818cf8',
+                }}
+              >
+                <FolderOpen className="h-3 w-3" />
+                {todo.project}
+              </span>
+            )}
+
             {todo.agent && (
               <span
                 className="inline-flex items-center gap-1 text-xs font-mono"

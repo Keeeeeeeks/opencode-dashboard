@@ -4,6 +4,7 @@ export interface Todo {
   status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox';
   priority: 'high' | 'medium' | 'low';
   agent?: string | null;
+  project?: string | null;
   session_id?: string | null;
   created_at: number;
   updated_at: number;

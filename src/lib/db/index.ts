@@ -6,6 +6,8 @@ import type {
   Message,
   Session,
   Setting,
+  Task,
+  Subtask,
   DatabaseOperations,
 } from './types';
 
@@ -52,11 +54,49 @@ function initializeDatabase(): Database.Database {
       value TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tag TEXT DEFAULT 'master',
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'pending',
+      priority TEXT DEFAULT 'medium',
+      dependencies TEXT,
+      details TEXT,
+      test_strategy TEXT,
+      complexity_score REAL,
+      assigned_agent_id TEXT,
+      linear_issue_id TEXT,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS subtasks (
+      id INTEGER,
+      task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'pending',
+      dependencies TEXT,
+      details TEXT,
+      created_at INTEGER DEFAULT (unixepoch()),
+      PRIMARY KEY (task_id, id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_todos_session_id ON todos(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_todo_id ON messages(todo_id);
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(read);
+    CREATE INDEX IF NOT EXISTS idx_tasks_tag ON tasks(tag);
+    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_subtasks_task_id ON subtasks(task_id);
   `);
+
+  // Migration: add project column to todos if not present
+  const columns = db.prepare("PRAGMA table_info(todos)").all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === 'project')) {
+    db.exec('ALTER TABLE todos ADD COLUMN project TEXT');
+  }
 
   return db;
 }
@@ -74,8 +114,8 @@ const db: DatabaseOperations = {
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, session_id, content, status, priority, agent, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, session_id, content, status, priority, agent, project, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -85,6 +125,7 @@ const db: DatabaseOperations = {
       todo.status,
       todo.priority,
       todo.agent,
+      todo.project,
       now,
       now
     );
@@ -121,7 +162,7 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, updated_at = ?
+      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -131,6 +172,7 @@ const db: DatabaseOperations = {
       updated.status,
       updated.priority,
       updated.agent,
+      updated.project,
       now,
       id
     );
@@ -314,6 +356,267 @@ const db: DatabaseOperations = {
     );
   },
 
+  createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at'>): Task {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO tasks (
+        tag,
+        title,
+        description,
+        status,
+        priority,
+        dependencies,
+        details,
+        test_strategy,
+        complexity_score,
+        assigned_agent_id,
+        linear_issue_id,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      task.tag,
+      task.title,
+      task.description,
+      task.status,
+      task.priority,
+      task.dependencies,
+      task.details,
+      task.test_strategy,
+      task.complexity_score,
+      task.assigned_agent_id,
+      task.linear_issue_id,
+      now,
+      now
+    );
+
+    return {
+      ...task,
+      id: Number(result.lastInsertRowid),
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  getTask(id: number): Task | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM tasks WHERE id = ?');
+    return (stmt.get(id) as Task) || null;
+  },
+
+  getAllTasks(tag?: string): Task[] {
+    const database = getDatabase();
+    if (tag) {
+      const stmt = database.prepare('SELECT * FROM tasks WHERE tag = ? ORDER BY updated_at DESC');
+      return stmt.all(tag) as Task[];
+    }
+
+    const stmt = database.prepare('SELECT * FROM tasks ORDER BY updated_at DESC');
+    return stmt.all() as Task[];
+  },
+
+  updateTask(id: number, updates: Partial<Omit<Task, 'id' | 'created_at'>>): Task {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const task = db.getTask(id);
+    if (!task) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+
+    const updated: Task = { ...task, ...updates, updated_at: now };
+
+    const stmt = database.prepare(`
+      UPDATE tasks
+      SET
+        tag = ?,
+        title = ?,
+        description = ?,
+        status = ?,
+        priority = ?,
+        dependencies = ?,
+        details = ?,
+        test_strategy = ?,
+        complexity_score = ?,
+        assigned_agent_id = ?,
+        linear_issue_id = ?,
+        updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(
+      updated.tag,
+      updated.title,
+      updated.description,
+      updated.status,
+      updated.priority,
+      updated.dependencies,
+      updated.details,
+      updated.test_strategy,
+      updated.complexity_score,
+      updated.assigned_agent_id,
+      updated.linear_issue_id,
+      now,
+      id
+    );
+
+    return updated;
+  },
+
+  deleteTask(id: number): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM tasks WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  createSubtask(subtask: Omit<Subtask, 'created_at'>): Subtask {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO subtasks (
+        id,
+        task_id,
+        title,
+        description,
+        status,
+        dependencies,
+        details,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      subtask.id,
+      subtask.task_id,
+      subtask.title,
+      subtask.description,
+      subtask.status,
+      subtask.dependencies,
+      subtask.details,
+      now
+    );
+
+    return {
+      ...subtask,
+      created_at: now,
+    };
+  },
+
+  getSubtasks(taskId: number): Subtask[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY id ASC');
+    return stmt.all(taskId) as Subtask[];
+  },
+
+  updateSubtask(
+    taskId: number,
+    subtaskId: number,
+    updates: Partial<Omit<Subtask, 'task_id' | 'id' | 'created_at'>>
+  ): Subtask {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM subtasks WHERE task_id = ? AND id = ?');
+    const subtask = (stmt.get(taskId, subtaskId) as Subtask) || null;
+
+    if (!subtask) {
+      throw new Error(`Subtask ${subtaskId} for task ${taskId} not found`);
+    }
+
+    const updated: Subtask = { ...subtask, ...updates };
+
+    const updateStmt = database.prepare(`
+      UPDATE subtasks
+      SET
+        title = ?,
+        description = ?,
+        status = ?,
+        dependencies = ?,
+        details = ?
+      WHERE task_id = ? AND id = ?
+    `);
+
+    updateStmt.run(
+      updated.title,
+      updated.description,
+      updated.status,
+      updated.dependencies,
+      updated.details,
+      taskId,
+      subtaskId
+    );
+
+    return updated;
+  },
+
+  deleteSubtask(taskId: number, subtaskId: number): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM subtasks WHERE task_id = ? AND id = ?');
+    const result = stmt.run(taskId, subtaskId);
+    return (result.changes ?? 0) > 0;
+  },
+
+  getNextTask(tag?: string): Task | null {
+    const tasks = db.getAllTasks(tag);
+    const taskMap = new Map<number, Task>(tasks.map((task) => [task.id, task]));
+    const priorityRank: Record<Task['priority'], number> = {
+      high: 3,
+      medium: 2,
+      low: 1,
+    };
+
+    const pendingTasks = tasks
+      .filter((task) => task.status === 'pending')
+      .filter((task) => {
+        if (!task.dependencies) {
+          return true;
+        }
+
+        try {
+          const dependencyIds = JSON.parse(task.dependencies) as unknown;
+          if (!Array.isArray(dependencyIds)) {
+            return true;
+          }
+
+          return dependencyIds.every((depId) => {
+            const numericDepId = Number(depId);
+            if (!Number.isFinite(numericDepId)) {
+              return false;
+            }
+            const dependencyTask = taskMap.get(numericDepId);
+            return dependencyTask?.status === 'done';
+          });
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => {
+        const priorityDiff = priorityRank[b.priority] - priorityRank[a.priority];
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+        if (a.created_at !== b.created_at) {
+          return a.created_at - b.created_at;
+        }
+        return a.id - b.id;
+      });
+
+    return pendingTasks[0] || null;
+  },
+
+  getTaskTags(): string[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT DISTINCT tag FROM tasks WHERE tag IS NOT NULL AND tag != "" ORDER BY tag ASC');
+    const rows = stmt.all() as Array<{ tag: string }>;
+    return rows.map((row) => row.tag);
+  },
+
   close(): void {
     if (dbInstance) {
       dbInstance.close();
@@ -323,4 +626,4 @@ const db: DatabaseOperations = {
 };
 
 export default db;
-export type { Todo, Message, Session, Setting, DatabaseOperations };
+export type { Todo, Message, Session, Setting, Task, Subtask, DatabaseOperations };

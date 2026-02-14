@@ -1,6 +1,6 @@
 export interface Message {
   id: number;
-  type: 'task_complete' | 'error' | 'state_change' | 'custom';
+  type: 'task_complete' | 'error' | 'state_change' | 'custom' | 'worklog';
   content: string;
   todo_id?: string | null;
   session_id?: string | null;
