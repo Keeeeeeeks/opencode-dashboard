@@ -1,6 +1,6 @@
 'use client';
 
-import { format, isSameYear } from 'date-fns';
+import { addDays, format, isSameYear } from 'date-fns';
 import { Calendar, Target, Zap } from 'lucide-react';
 import type { Sprint } from '@/lib/db/types';
 
@@ -12,9 +12,9 @@ const STATUS_CONFIG: Record<SprintStatus, { label: string; bg: string; color: st
   completed: { label: 'Completed', bg: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', icon: '✓' },
 };
 
-function formatSprintRange(startMs: number, endMs: number): string {
-  const start = new Date(startMs);
-  const end = new Date(endMs);
+function formatSprintRange(startSeconds: number, sprintLengthDays = 14): string {
+  const start = new Date(startSeconds * 1000);
+  const end = addDays(start, sprintLengthDays);
   const now = new Date();
 
   if (isSameYear(start, end)) {
@@ -32,7 +32,7 @@ interface SprintHeaderProps {
 
 export function SprintHeader({ sprint }: SprintHeaderProps) {
   const statusCfg = STATUS_CONFIG[sprint.status];
-  const dateRange = formatSprintRange(sprint.start_date, sprint.end_date);
+  const dateRange = formatSprintRange(sprint.start_date);
 
   return (
     <div
