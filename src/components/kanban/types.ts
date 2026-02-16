@@ -22,9 +22,16 @@ export interface KanbanColumnProps {
   status: Todo['status'];
   todos: Todo[];
   onStatusChange: (id: string, newStatus: Todo['status']) => void;
+  childTodosMap: Map<string, Todo[]>;
+  expandedParents: Set<string>;
+  onToggleExpand: (parentId: string) => void;
 }
 
 export interface KanbanCardProps {
   todo: Todo;
   isDragging?: boolean;
+  childCount?: number;
+  isSubtask?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
