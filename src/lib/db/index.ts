@@ -11,6 +11,7 @@ import type {
   TodoComment,
   Sprint,
   SprintVelocity,
+  StatusHistoryEntry,
   DatabaseOperations,
 } from './types';
 
@@ -111,6 +112,15 @@ function initializeDatabase(): Database.Database {
       PRIMARY KEY (todo_id, sprint_id)
     );
 
+    CREATE TABLE IF NOT EXISTS todo_status_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+      old_status TEXT,
+      new_status TEXT NOT NULL,
+      changed_by TEXT,
+      changed_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
     CREATE INDEX IF NOT EXISTS idx_todos_session_id ON todos(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_todo_id ON messages(todo_id);
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
@@ -121,6 +131,8 @@ function initializeDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_todo_comments_todo_id ON todo_comments(todo_id);
     CREATE INDEX IF NOT EXISTS idx_todo_sprints_sprint_id ON todo_sprints(sprint_id);
     CREATE INDEX IF NOT EXISTS idx_todo_sprints_todo_id ON todo_sprints(todo_id);
+    CREATE INDEX IF NOT EXISTS idx_todo_status_history_todo_id ON todo_status_history(todo_id);
+    CREATE INDEX IF NOT EXISTS idx_todo_status_history_changed_at ON todo_status_history(changed_at);
   `);
 
   // Migration: add project column to todos if not present
@@ -131,6 +143,10 @@ function initializeDatabase(): Database.Database {
   if (!columns.some((c) => c.name === 'parent_id')) {
     db.exec('ALTER TABLE todos ADD COLUMN parent_id TEXT REFERENCES todos(id) ON DELETE CASCADE');
     db.exec('CREATE INDEX IF NOT EXISTS idx_todos_parent_id ON todos(parent_id)');
+  }
+  if (!columns.some((c) => c.name === 'completed_at')) {
+    db.exec('ALTER TABLE todos ADD COLUMN completed_at INTEGER');
+    db.exec("UPDATE todos SET completed_at = updated_at WHERE status = 'completed' AND completed_at IS NULL");
   }
 
   return db;
@@ -144,7 +160,7 @@ function getDatabase(): Database.Database {
 }
 
 const db: DatabaseOperations = {
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at'>): Todo {
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
 
@@ -162,9 +178,11 @@ const db: DatabaseOperations = {
     }
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, session_id, content, status, priority, agent, project, parent_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    const completedAt = todo.status === 'completed' ? now : null;
 
     stmt.run(
       todo.id,
@@ -175,12 +193,20 @@ const db: DatabaseOperations = {
       todo.agent,
       todo.project,
       todo.parent_id ?? null,
+      completedAt,
       now,
       now
     );
 
+    const historyStmt = database.prepare(`
+      INSERT INTO todo_status_history (todo_id, old_status, new_status, changed_by, changed_at)
+      VALUES (?, NULL, ?, ?, ?)
+    `);
+    historyStmt.run(todo.id, todo.status, todo.agent || null, now);
+
     return {
       ...todo,
+      completed_at: completedAt,
       created_at: now,
       updated_at: now,
     };
@@ -260,6 +286,22 @@ const db: DatabaseOperations = {
 
     const updated = { ...todo, ...updates, updated_at: now };
 
+    const statusChanged = updates.status !== undefined && updates.status !== todo.status;
+
+    if (statusChanged && updates.status) {
+      const historyStmt = database.prepare(`
+        INSERT INTO todo_status_history (todo_id, old_status, new_status, changed_by, changed_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      historyStmt.run(id, todo.status, updates.status, updates.agent || todo.agent || null, now);
+    }
+
+    if (updates.status === 'completed' && todo.status !== 'completed') {
+      updated.completed_at = now;
+    } else if (updates.status && updates.status !== 'completed' && todo.completed_at !== null) {
+      updated.completed_at = null;
+    }
+
     if (updated.parent_id) {
       if (!db.getTodo(updated.parent_id)) {
         throw new Error(`Parent todo with id ${updated.parent_id} not found`);
@@ -275,7 +317,7 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, updated_at = ?
+      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -287,11 +329,50 @@ const db: DatabaseOperations = {
       updated.agent,
       updated.project,
       updated.parent_id ?? null,
+      updated.completed_at,
       now,
       id
     );
 
     return updated;
+  },
+
+  logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry {
+    const database = getDatabase();
+    const stmt = database.prepare(`
+      INSERT INTO todo_status_history (todo_id, old_status, new_status, changed_by, changed_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(entry.todo_id, entry.old_status, entry.new_status, entry.changed_by, entry.changed_at);
+
+    return {
+      ...entry,
+      id: Number(result.lastInsertRowid),
+    };
+  },
+
+  getStatusHistory(todoId: string): StatusHistoryEntry[] {
+    const database = getDatabase();
+    const stmt = database.prepare(
+      'SELECT * FROM todo_status_history WHERE todo_id = ? ORDER BY changed_at ASC, id ASC'
+    );
+    return stmt.all(todoId) as StatusHistoryEntry[];
+  },
+
+  getStatusHistoryInRange(startTime: number, endTime: number): StatusHistoryEntry[] {
+    const database = getDatabase();
+    const stmt = database.prepare(
+      'SELECT * FROM todo_status_history WHERE changed_at >= ? AND changed_at <= ? ORDER BY changed_at ASC, id ASC'
+    );
+    return stmt.all(startTime, endTime) as StatusHistoryEntry[];
+  },
+
+  getCompletedTodosInRange(startTime: number, endTime: number): Todo[] {
+    const database = getDatabase();
+    const stmt = database.prepare(
+      'SELECT * FROM todos WHERE completed_at >= ? AND completed_at <= ? ORDER BY completed_at ASC, id ASC'
+    );
+    return stmt.all(startTime, endTime) as Todo[];
   },
 
   deleteTodo(id: string): boolean {
@@ -958,5 +1039,6 @@ export type {
   TodoComment,
   Sprint,
   SprintVelocity,
+  StatusHistoryEntry,
   DatabaseOperations,
 };

@@ -8,6 +8,7 @@ export interface Todo {
   parent_id?: string | null;
   comment_count?: number;
   session_id?: string | null;
+  completed_at?: number | null;
   created_at: number;
   updated_at: number;
 }

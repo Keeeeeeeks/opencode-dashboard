@@ -11,8 +11,18 @@ export interface Todo {
   agent: string | null;
   project: string | null;
   parent_id?: string | null;
+  completed_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface StatusHistoryEntry {
+  id: number;
+  todo_id: string;
+  old_status: string | null;
+  new_status: string;
+  changed_by: string | null;
+  changed_at: number;
 }
 
 export interface Message {
@@ -101,7 +111,7 @@ export interface SprintVelocity {
  */
 export interface DatabaseOperations {
   // Todo operations
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at'>): Todo;
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo;
   getTodo(id: string): Todo | null;
   getAllTodos(): Todo[];
   getChildTodos(parentId: string): Todo[];
@@ -109,6 +119,10 @@ export interface DatabaseOperations {
   hasCircularReference(childId: string, proposedParentId: string): boolean;
   updateTodo(id: string, updates: Partial<Omit<Todo, 'id' | 'created_at'>>): Todo;
   deleteTodo(id: string): boolean;
+  logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry;
+  getStatusHistory(todoId: string): StatusHistoryEntry[];
+  getStatusHistoryInRange(startTime: number, endTime: number): StatusHistoryEntry[];
+  getCompletedTodosInRange(startTime: number, endTime: number): Todo[];
 
   createComment(comment: Omit<TodoComment, 'id' | 'created_at'>): TodoComment;
   getComments(todoId: string): TodoComment[];
