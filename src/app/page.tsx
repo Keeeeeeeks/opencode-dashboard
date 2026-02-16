@@ -154,6 +154,18 @@ export default function Dashboard() {
               </button>
 
               <Link
+                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/analytics`}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
+                style={{
+                  background: 'var(--accent-subtle)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                }}
+              >
+                Analytics
+              </Link>
+
+              <Link
                 href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/v2`}
                 className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
                 style={{
