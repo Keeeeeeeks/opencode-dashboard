@@ -1,16 +1,21 @@
 import { create } from 'zustand';
 import type { Todo } from '@/components/kanban/types';
 import type { Message } from '@/components/messages/types';
+import type { Sprint } from '@/lib/db/types';
 
 interface DashboardState {
   todos: Todo[];
   messages: Message[];
+  sprints: Sprint[];
+  activeSprint: string | null;
   currentSessionId: string | null;
   isConnected: boolean;
   lastFetchTime: number | null;
 
   setTodos: (todos: Todo[]) => void;
   setMessages: (messages: Message[]) => void;
+  setSprints: (sprints: Sprint[]) => void;
+  setActiveSprint: (id: string | null) => void;
   setCurrentSessionId: (sessionId: string | null) => void;
   setIsConnected: (connected: boolean) => void;
   setLastFetchTime: (time: number) => void;
@@ -23,12 +28,16 @@ interface DashboardState {
 export const useDashboardStore = create<DashboardState>((set) => ({
   todos: [],
   messages: [],
+  sprints: [],
+  activeSprint: null,
   currentSessionId: null,
   isConnected: false,
   lastFetchTime: null,
 
   setTodos: (todos) => set({ todos }),
   setMessages: (messages) => set({ messages }),
+  setSprints: (sprints) => set({ sprints }),
+  setActiveSprint: (activeSprint) => set({ activeSprint }),
   setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
   setIsConnected: (connected) => set({ isConnected: connected }),
   setLastFetchTime: (time) => set({ lastFetchTime: time }),

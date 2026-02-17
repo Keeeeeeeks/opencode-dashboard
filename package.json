@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed": "bun scripts/seed.ts",
+    "test:e2e": "bunx playwright test"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -26,6 +28,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",

@@ -10,7 +10,9 @@ const CreateTodoSchema = z.object({
   priority: z.enum(['low', 'medium', 'high']).optional(),
   agent: z.string().optional(),
   project: z.string().nullable().optional(),
+  parent_id: z.string().nullable().optional(),
   session_id: z.string().optional(),
+  sprint_id: z.string().optional(),
 });
 
 const BatchTodoSchema = CreateTodoSchema.extend({
@@ -20,8 +22,6 @@ const BatchTodoSchema = CreateTodoSchema.extend({
 const BatchTodosRequestSchema = z.object({
   todos: z.array(BatchTodoSchema),
 });
-
-type CreateTodoRequest = z.infer<typeof CreateTodoSchema>;
 
 /**
  * GET /api/todos
@@ -36,10 +36,26 @@ export async function GET(request: NextRequest) {
 
   try {
     const searchParams = request.nextUrl.searchParams;
+    const idParam = searchParams.get('id');
+
+    if (idParam) {
+      const todo = db.getTodo(idParam);
+      if (!todo) {
+        return NextResponse.json({ error: 'Todo not found' }, { status: 404, headers: corsHeaders(request) });
+      }
+      return NextResponse.json(
+        { id: todo.id, content: todo.content, status: todo.status, priority: todo.priority },
+        { status: 200, headers: corsHeaders(request) }
+      );
+    }
+
     const sessionId = searchParams.get('session_id');
     const statusParam = searchParams.get('status');
     const sinceParam = searchParams.get('since');
     const projectParam = searchParams.get('project');
+    const sprintIdParam = searchParams.get('sprint_id');
+    const parentIdParam = searchParams.get('parent_id');
+    const topLevelParam = searchParams.get('top_level');
 
     let todos = db.getAllTodos();
 
@@ -49,6 +65,19 @@ export async function GET(request: NextRequest) {
 
     if (projectParam) {
       todos = todos.filter((t) => t.project === projectParam);
+    }
+
+    if (sprintIdParam) {
+      const sprintTodoIds = new Set(db.getSprintTodos(sprintIdParam).map((todo) => todo.id));
+      todos = todos.filter((todo) => sprintTodoIds.has(todo.id));
+    }
+
+    if (parentIdParam) {
+      todos = todos.filter((t) => t.parent_id === parentIdParam);
+    }
+
+    if (topLevelParam === 'true') {
+      todos = todos.filter((t) => t.parent_id === null || t.parent_id === undefined);
     }
 
     if (statusParam) {
@@ -63,8 +92,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const commentCounts = db.getCommentCounts();
+    const sprintMap = db.getTodoSprintMap();
+    const todosWithCounts = todos.map((todo) => ({
+      ...todo,
+      comment_count: commentCounts[todo.id] || 0,
+      sprints: sprintMap.get(todo.id) || [],
+    }));
+
     return NextResponse.json(
-      { todos },
+      { todos: todosWithCounts },
       {
         status: 200,
         headers: corsHeaders(request),
@@ -101,6 +138,7 @@ export async function POST(request: NextRequest) {
     const data = CreateTodoSchema.parse(body);
 
     let todo;
+    let autoSprintId: string | null = null;
 
     if (data.id) {
       todo = db.updateTodo(data.id, {
@@ -109,23 +147,37 @@ export async function POST(request: NextRequest) {
         priority: data.priority || 'medium',
         agent: data.agent || null,
         project: data.project ?? null,
+        parent_id: data.parent_id ?? null,
         session_id: data.session_id || null,
         updated_at: Date.now(),
       });
     } else {
       todo = db.createTodo({
-        id: `todo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `todo_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         content: data.content,
         status: data.status || 'pending',
         priority: data.priority || 'medium',
         agent: data.agent || null,
         project: data.project ?? null,
+        parent_id: data.parent_id ?? null,
         session_id: data.session_id || null,
       });
+
+      if (!data.sprint_id) {
+        const activeSprint = db.getActiveSprint();
+        if (activeSprint) {
+          db.assignTodoToSprint(todo.id, activeSprint.id);
+          autoSprintId = activeSprint.id;
+        }
+      }
+    }
+
+    if (data.sprint_id) {
+      db.assignTodoToSprint(todo.id, data.sprint_id);
     }
 
     return NextResponse.json(
-      { todo },
+      { todo, auto_sprint_id: autoSprintId },
       {
         status: 200,
         headers: corsHeaders(request),
@@ -173,26 +225,34 @@ export async function PUT(request: NextRequest) {
       const existingTodo = db.getTodo(todoData.id);
 
       if (existingTodo) {
-        db.updateTodo(todoData.id, {
+          db.updateTodo(todoData.id, {
           content: todoData.content,
           status: todoData.status || 'pending',
-          priority: todoData.priority || 'medium',
-          agent: todoData.agent || null,
-          project: todoData.project ?? null,
-          session_id: todoData.session_id || null,
-          updated_at: Date.now(),
-        });
+           priority: todoData.priority || 'medium',
+           agent: todoData.agent || null,
+           project: todoData.project ?? null,
+           parent_id: todoData.parent_id ?? null,
+           session_id: todoData.session_id || null,
+            updated_at: Date.now(),
+          });
+          if (todoData.sprint_id) {
+            db.assignTodoToSprint(todoData.id, todoData.sprint_id);
+          }
         results.push({ id: todoData.id, action: 'updated' });
       } else {
         db.createTodo({
           id: todoData.id,
           content: todoData.content,
           status: todoData.status || 'pending',
-          priority: todoData.priority || 'medium',
-          agent: todoData.agent || null,
-          project: todoData.project ?? null,
-          session_id: todoData.session_id || null,
-        });
+           priority: todoData.priority || 'medium',
+           agent: todoData.agent || null,
+           project: todoData.project ?? null,
+           parent_id: todoData.parent_id ?? null,
+            session_id: todoData.session_id || null,
+          });
+          if (todoData.sprint_id) {
+            db.assignTodoToSprint(todoData.id, todoData.sprint_id);
+          }
         results.push({ id: todoData.id, action: 'created' });
       }
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { Filter, Plus } from 'lucide-react';
+import { Filter, Plus, ListTree } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { NewTicketModal } from './NewTicketModal';
@@ -21,10 +21,11 @@ import type { KanbanBoardProps, Todo } from './types';
 
 const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'completed', 'icebox'];
 
-export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardProps) {
+export function KanbanBoard({ todos, activeSprintId, onStatusChange, isLoading }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
   const projects = useMemo(() => {
     const set = new Set<string>();
@@ -36,6 +37,28 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
     () => selectedProject ? todos.filter((t) => t.project === selectedProject) : todos,
     [todos, selectedProject]
   );
+
+  const childTodosMap = useMemo(() => {
+    const map = new Map<string, Todo[]>();
+    filteredTodos.filter((t) => t.parent_id).forEach((t) => {
+      const children = map.get(t.parent_id!) || [];
+      children.push(t);
+      map.set(t.parent_id!, children);
+    });
+    return map;
+  }, [filteredTodos]);
+
+  const handleToggleExpand = useCallback((parentId: string) => {
+    setExpandedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentId)) {
+        next.delete(parentId);
+      } else {
+        next.add(parentId);
+      }
+      return next;
+    });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -49,6 +72,9 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
   );
 
   const activeTodo = activeId ? filteredTodos.find((t) => t.id === activeId) : null;
+  const activeTodoChildCount = activeTodo && !activeTodo.parent_id
+    ? (childTodosMap.get(activeTodo.id) || []).length
+    : 0;
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -82,7 +108,8 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 stagger-children">
+      <div className="overflow-x-auto pb-2" style={{ scrollbarGutter: 'stable' }}>
+      <div className="grid gap-4 stagger-children" style={{ gridTemplateColumns: 'repeat(5, minmax(320px, 1fr))' }}>
         {columns.map((status) => (
           <div
             key={status}
@@ -106,6 +133,7 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
             </div>
           </div>
         ))}
+      </div>
       </div>
     );
   }
@@ -148,6 +176,15 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
           </select>
           </>
         )}
+
+        {activeSprintId ? (
+          <span
+            className="ml-auto rounded-md px-2 py-1 text-xs font-medium"
+            style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}
+          >
+            Sprint Filter Active
+          </span>
+        ) : null}
       </div>
 
       <NewTicketModal
@@ -162,20 +199,47 @@ export function KanbanBoard({ todos, onStatusChange, isLoading }: KanbanBoardPro
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {columns.map((status) => (
-            <KanbanColumn
-              key={status}
-              title={status}
-              status={status}
-              todos={filteredTodos.filter((t) => t.status === status)}
-              onStatusChange={onStatusChange}
-            />
-          ))}
+        <div className="overflow-x-auto pb-2" style={{ scrollbarGutter: 'stable' }}>
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(5, minmax(320px, 1fr))' }}>
+            {columns.map((status) => (
+              <KanbanColumn
+                key={status}
+                title={status}
+                status={status}
+                todos={filteredTodos.filter((t) => t.status === status)}
+                onStatusChange={onStatusChange}
+                childTodosMap={childTodosMap}
+                expandedParents={expandedParents}
+                onToggleExpand={handleToggleExpand}
+              />
+            ))}
+          </div>
         </div>
 
         <DragOverlay>
-          {activeTodo ? <KanbanCard todo={activeTodo} isDragging /> : null}
+          {activeTodo ? (
+            <div className="relative">
+              <KanbanCard
+                todo={activeTodo}
+                isDragging
+                childCount={activeTodoChildCount}
+                isSubtask={!!activeTodo.parent_id}
+              />
+              {activeTodoChildCount > 0 && (
+                <div
+                  className="absolute -bottom-2 -right-2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                  style={{
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    boxShadow: 'var(--shadow-md)',
+                  }}
+                >
+                  <ListTree className="h-3 w-3" />
+                  {activeTodoChildCount}
+                </div>
+              )}
+            </div>
+          ) : null}
         </DragOverlay>
       </DndContext>
     </div>

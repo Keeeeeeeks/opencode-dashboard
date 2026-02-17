@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
-import { useDashboardStore } from '@/stores/dashboard';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { X, Zap } from 'lucide-react';
 
-interface NewTicketModalProps {
+interface CreateSprintModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
@@ -12,15 +11,6 @@ interface NewTicketModalProps {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
-
-const PROJECTS = [
-  'the-culture',
-  'bell-and-the-void',
-  'clawdina-tales',
-  'opencode-dashboard',
-  'crypto-attestation',
-  'infrastructure',
-] as const;
 
 function authHeaders(): HeadersInit {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -30,26 +20,30 @@ function authHeaders(): HeadersInit {
   return headers;
 }
 
-export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps) {
-  const sprints = useDashboardStore((s) => s.sprints);
-  const [content, setContent] = useState('');
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [project, setProject] = useState('');
-  const [sprintId, setSprintId] = useState('');
+function toDateInputValue(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModalProps) {
+  const now = new Date();
+  const twoWeeksOut = new Date(now.getTime() + 14 * 86400000);
+
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState(toDateInputValue(now));
+  const [endDate, setEndDate] = useState(toDateInputValue(twoWeeksOut));
+  const [goal, setGoal] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Focus trap + autofocus
   useEffect(() => {
     if (open) {
-      requestAnimationFrame(() => contentRef.current?.focus());
+      requestAnimationFrame(() => nameRef.current?.focus());
     }
   }, [open]);
 
-  // Escape to close
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: globalThis.KeyboardEvent) => {
@@ -62,14 +56,13 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
     return () => document.removeEventListener('keydown', handleKey);
   }, [open, onClose]);
 
-  // Focus trap
   useEffect(() => {
     if (!open || !modalRef.current) return;
     const modal = modalRef.current;
     const handleTab = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Tab') return;
       const focusable = modal.querySelectorAll<HTMLElement>(
-        'textarea, input, select, button, [tabindex]:not([tabindex="-1"])'
+        'input, textarea, select, button, [tabindex]:not([tabindex="-1"])'
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
@@ -86,59 +79,57 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
     return () => document.removeEventListener('keydown', handleTab);
   }, [open]);
 
-  useEffect(() => {
-    if (open && !sprintId) {
-      const activeSprint = sprints.find((s) => s.status === 'active');
-      if (activeSprint) {
-        setSprintId(activeSprint.id);
-      }
-    }
-  }, [open, sprintId, sprints]);
-
   const reset = () => {
-    setContent('');
-    setPriority('medium');
-    setProject('');
-    setSprintId(sprints.find((s) => s.status === 'active')?.id ?? '');
+    setName('');
+    const n = new Date();
+    setStartDate(toDateInputValue(n));
+    setEndDate(toDateInputValue(new Date(n.getTime() + 14 * 86400000)));
+    setGoal('');
     setError(null);
   };
 
-  const handleSubmit = async (e?: { preventDefault: () => void }) => {
+  const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault();
-    const trimmed = content.trim();
-    if (!trimmed || submitting) return;
+    const trimmedName = name.trim();
+    if (!trimmedName || submitting) return;
+
+    const startUnix = Math.floor(new Date(startDate + 'T00:00:00Z').getTime() / 1000);
+    const endUnix = Math.floor(new Date(endDate + 'T23:59:59Z').getTime() / 1000);
+
+    if (endUnix < startUnix) {
+      setError('End date must be after start date.');
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const body: Record<string, string | null> = {
-        content: trimmed,
-        priority,
-        status: 'pending',
-        project: project || null,
-        sprint_id: sprintId || null,
-      };
-
-      const res = await fetch(`${API_BASE}/api/todos`, {
+      const res = await fetch(`${API_BASE}/api/sprints`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          name: trimmedName,
+          start_date: startUnix,
+          end_date: endUnix,
+          goal: goal.trim() || null,
+          status: 'planning',
+        }),
       });
 
-      if (!res.ok) throw new Error('Failed to create ticket');
+      if (!res.ok) throw new Error('Failed to create sprint');
 
       reset();
       onCreated();
       onClose();
     } catch {
-      setError('Failed to create ticket. Try again.');
+      setError('Failed to create sprint. Try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleTextareaKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
@@ -152,15 +143,13 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-      {/* Modal */}
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        aria-label="New Ticket"
+        aria-label="Create Sprint"
         className="relative w-full max-w-lg rounded-xl border animate-in fade-in zoom-in-95 duration-200"
         style={{
           background: 'var(--card)',
@@ -168,14 +157,16 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
           boxShadow: 'var(--shadow-lg, 0 25px 50px -12px rgba(0,0,0,.5))',
         }}
       >
-        {/* Header */}
         <div
           className="flex items-center justify-between px-5 py-4"
           style={{ borderBottom: '1px solid var(--border)' }}
         >
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>
-            New Ticket
-          </h3>
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4" style={{ color: '#14b8a6' }} />
+            <h3 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>
+              New Sprint
+            </h3>
+          </div>
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 transition-colors"
@@ -187,26 +178,103 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* Content */}
           <div>
             <label
-              htmlFor="ticket-content"
+              htmlFor="sprint-name"
               className="block text-sm font-medium mb-1.5"
               style={{ color: 'var(--text)' }}
             >
-              Description <span style={{ color: 'var(--danger)' }}>*</span>
+              Sprint Name <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            <input
+              ref={nameRef}
+              id="sprint-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Sprint 12 — Auth & Permissions"
+              required
+              className="w-full rounded-lg px-3 py-2 text-sm transition-colors placeholder:opacity-40 focus:outline-none focus:ring-2"
+              style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                // @ts-expect-error CSS custom property
+                '--tw-ring-color': 'var(--accent)',
+              }}
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label
+                htmlFor="sprint-start"
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: 'var(--text)' }}
+              >
+                Start Date
+              </label>
+              <input
+                id="sprint-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2"
+                style={{
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  colorScheme: 'dark',
+                  // @ts-expect-error CSS custom property
+                  '--tw-ring-color': 'var(--accent)',
+                }}
+              />
+            </div>
+            <div className="flex-1">
+              <label
+                htmlFor="sprint-end"
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: 'var(--text)' }}
+              >
+                End Date
+              </label>
+              <input
+                id="sprint-end"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2"
+                style={{
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  colorScheme: 'dark',
+                  // @ts-expect-error CSS custom property
+                  '--tw-ring-color': 'var(--accent)',
+                }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="sprint-goal"
+              className="block text-sm font-medium mb-1.5"
+              style={{ color: 'var(--text)' }}
+            >
+              Goal <span className="text-xs font-normal" style={{ color: 'var(--muted)' }}>(optional)</span>
             </label>
             <textarea
-              ref={contentRef}
-              id="ticket-content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={handleTextareaKey}
-              placeholder="What needs to be done?"
-              rows={3}
-              required
+              id="sprint-goal"
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ship the auth module and close all P0 bugs"
+              rows={2}
               className="w-full rounded-lg px-3 py-2 text-sm resize-none transition-colors placeholder:opacity-40 focus:outline-none focus:ring-2"
               style={{
                 background: 'var(--bg)',
@@ -218,99 +286,10 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
             />
           </div>
 
-          {/* Priority + Project row */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label
-                htmlFor="ticket-priority"
-                className="block text-sm font-medium mb-1.5"
-                style={{ color: 'var(--text)' }}
-              >
-                Priority
-              </label>
-              <select
-                id="ticket-priority"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as 'low' | 'medium' | 'high')}
-                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 appearance-none"
-                style={{
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  // @ts-expect-error CSS custom property
-                  '--tw-ring-color': 'var(--accent)',
-                }}
-              >
-                <option value="low">🟢 Low</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="high">🔴 High</option>
-              </select>
-            </div>
-
-            <div className="flex-1">
-              <label
-                htmlFor="ticket-project"
-                className="block text-sm font-medium mb-1.5"
-                style={{ color: 'var(--text)' }}
-              >
-                Project
-              </label>
-              <select
-                id="ticket-project"
-                value={project}
-                onChange={(e) => setProject(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 appearance-none"
-                style={{
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  // @ts-expect-error CSS custom property
-                  '--tw-ring-color': 'var(--accent)',
-                }}
-              >
-                <option value="">None</option>
-                {PROJECTS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {sprints.length > 0 && (
-            <div>
-              <label
-                htmlFor="ticket-sprint"
-                className="block text-sm font-medium mb-1.5"
-                style={{ color: 'var(--text)' }}
-              >
-                Sprint
-              </label>
-              <select
-                id="ticket-sprint"
-                value={sprintId}
-                onChange={(e) => setSprintId(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 appearance-none"
-                style={{
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  // @ts-expect-error CSS custom property
-                  '--tw-ring-color': 'var(--accent)',
-                }}
-              >
-                <option value="">No Sprint</option>
-                {sprints.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {error && (
             <p className="text-sm" style={{ color: 'var(--danger)' }}>{error}</p>
           )}
 
-          {/* Footer */}
           <div className="flex items-center justify-between pt-2">
             <span className="text-xs" style={{ color: 'var(--muted)' }}>
               ⌘+Enter to submit
@@ -328,16 +307,16 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
               </button>
               <button
                 type="submit"
-                disabled={!content.trim() || submitting}
+                disabled={!name.trim() || submitting}
                 className="rounded-lg px-4 py-1.5 text-sm font-medium transition-all disabled:opacity-40"
                 style={{
-                  background: 'var(--accent)',
+                  background: '#14b8a6',
                   color: '#fff',
                 }}
                 onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.opacity = '0.85'; }}
                 onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
               >
-                {submitting ? 'Creating…' : 'Create Ticket'}
+                {submitting ? 'Creating…' : 'Create Sprint'}
               </button>
             </div>
           </div>

@@ -26,15 +26,24 @@ const statusLabels: Record<Todo['status'], string> = {
   icebox: 'Icebox',
 };
 
-export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanColumnProps) {
+export function KanbanColumn({ title, status, todos, onStatusChange, childTodosMap, expandedParents, onToggleExpand }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const [collapsed, setCollapsed] = useState(false);
+
+  const parentTodos = todos.filter((t) => !t.parent_id);
+  const orphanChildren = todos.filter((t) => {
+    if (!t.parent_id) return false;
+    const parentInThisColumn = parentTodos.some((p) => p.id === t.parent_id);
+    return !parentInThisColumn;
+  });
+
+  const allSortableIds = todos.map((t) => t.id);
 
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'flex flex-col rounded-xl transition-all',
+        'flex flex-col rounded-xl transition-all min-w-[320px]',
         !collapsed && 'min-h-[500px]',
         isOver && 'ring-2 ring-offset-2'
       )}
@@ -83,7 +92,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
       </div>
 
       {!collapsed && (
-        <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
           <div className="flex-1 p-2 space-y-2 overflow-y-auto">
             {todos.length === 0 ? (
               <div
@@ -93,7 +102,45 @@ export function KanbanColumn({ title, status, todos, onStatusChange }: KanbanCol
                 No tasks
               </div>
             ) : (
-              todos.map((todo) => <KanbanCard key={todo.id} todo={todo} />)
+              <>
+                {parentTodos.map((todo) => {
+                  const childrenInColumn = (childTodosMap.get(todo.id) || []).filter(
+                    (c) => c.status === status
+                  );
+                  const allChildren = childTodosMap.get(todo.id) || [];
+                  const isExpanded = expandedParents.has(todo.id);
+
+                  return (
+                    <div key={todo.id}>
+                      <KanbanCard
+                        todo={todo}
+                        childCount={allChildren.length}
+                        isExpanded={isExpanded}
+                        onToggleExpand={() => onToggleExpand(todo.id)}
+                        onStatusChange={onStatusChange}
+                      />
+                      {isExpanded && childrenInColumn.length > 0 && (
+                        <div
+                          className="ml-6 mt-1 space-y-1.5 pl-3"
+                          style={{ borderLeft: '2px solid var(--border)' }}
+                        >
+                          {childrenInColumn.map((child) => (
+                            <KanbanCard
+                              key={child.id}
+                              todo={child}
+                              isSubtask
+                              onStatusChange={onStatusChange}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {orphanChildren.map((todo) => (
+                  <KanbanCard key={todo.id} todo={todo} isSubtask onStatusChange={onStatusChange} />
+                ))}
+              </>
             )}
           </div>
         </SortableContext>

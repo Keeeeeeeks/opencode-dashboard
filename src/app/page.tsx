@@ -6,14 +6,18 @@ import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
 import { usePolling } from '@/hooks/usePolling';
-import { Activity, Moon, Sun, Menu, X, Plus } from 'lucide-react';
+import { Moon, Sun, Menu, X, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
+import { VelocityWidget } from '@/components/sprints/VelocityWidget';
+import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
+import { SprintHeader } from '@/components/sprints/SprintHeader';
 
 export default function Dashboard() {
-  const { todos, messages, isConnected } = useDashboardStore();
+  const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
   const [newTicketOpen, setNewTicketOpen] = useState(false);
+  const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +49,8 @@ export default function Dashboard() {
     markMessagesAsRead(ids);
     useDashboardStore.getState().markMessagesAsRead(ids);
   };
+
+  const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -97,6 +103,47 @@ export default function Dashboard() {
                 </span>
               </div>
 
+              <div className="flex items-center">
+                <select
+                  value={activeSprint ?? ''}
+                  onChange={(event) => setActiveSprint(event.target.value || null)}
+                  className="rounded-l-md px-2.5 py-1.5 text-xs font-medium outline-none"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    borderRight: 'none',
+                  }}
+                >
+                  <option value="">All Sprints</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setNewSprintOpen(true)}
+                  className="rounded-r-md px-2 py-1.5 transition-colors"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--bg-hover)';
+                    e.currentTarget.style.color = '#14b8a6';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--bg-elevated)';
+                    e.currentTarget.style.color = 'var(--muted)';
+                  }}
+                  title="Create new sprint"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
               <button
                 onClick={toggleDark}
                 className="rounded-lg p-2 transition-colors"
@@ -106,6 +153,18 @@ export default function Dashboard() {
               >
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
+
+              <Link
+                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/analytics`}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
+                style={{
+                  background: 'var(--accent-subtle)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                }}
+              >
+                Analytics
+              </Link>
 
               <Link
                 href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/v2`}
@@ -133,7 +192,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
+      <main className="mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 min-w-0">
             <div className="mb-4 flex items-start justify-between">
@@ -167,8 +226,15 @@ export default function Dashboard() {
               onClose={() => setNewTicketOpen(false)}
               onCreated={() => fetchData()}
             />
+            <CreateSprintModal
+              open={newSprintOpen}
+              onClose={() => setNewSprintOpen(false)}
+              onCreated={() => fetchData()}
+            />
+            {selectedSprint && <SprintHeader sprint={selectedSprint} />}
             <KanbanBoard
               todos={todos}
+              activeSprintId={activeSprint}
               onStatusChange={handleStatusChange}
               isLoading={isLoading}
             />
@@ -189,18 +255,27 @@ export default function Dashboard() {
           >
             <div className="h-full md:sticky md:top-24">
               <div
-                className="h-[calc(100vh-8rem)] md:h-[calc(100vh-7rem)] rounded-xl p-4"
+                className="h-[calc(100vh-8rem)] md:h-[calc(100vh-7rem)] rounded-xl p-4 flex flex-col"
                 style={{
                   background: 'var(--card)',
                   border: '1px solid var(--border)',
                   boxShadow: 'var(--shadow-md)',
                 }}
               >
-                <MessageFeed
-                  messages={messages}
-                  onMarkAsRead={handleMarkAsRead}
-                  isLoading={isLoading}
-                />
+                {selectedSprint ? (
+                  <VelocityWidget
+                    sprintId={selectedSprint.id}
+                    sprintName={selectedSprint.name}
+                    sprintStatus={selectedSprint.status}
+                  />
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  <MessageFeed
+                    messages={messages}
+                    onMarkAsRead={handleMarkAsRead}
+                    isLoading={isLoading}
+                  />
+                </div>
               </div>
             </div>
           </div>

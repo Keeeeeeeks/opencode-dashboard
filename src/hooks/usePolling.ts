@@ -19,9 +19,11 @@ export function usePolling() {
   const {
     setTodos,
     setMessages,
+    setSprints,
     setIsConnected,
     setLastFetchTime,
     currentSessionId,
+    activeSprint,
   } = useDashboardStore();
 
   const isPollingRef = useRef(false);
@@ -36,10 +38,14 @@ export function usePolling() {
       if (currentSessionId) {
         todosParams.set('session_id', currentSessionId);
       }
+      if (activeSprint) {
+        todosParams.set('sprint_id', activeSprint);
+      }
 
-      const [todosRes, messagesRes] = await Promise.all([
+      const [todosRes, messagesRes, sprintsRes] = await Promise.all([
         fetch(`${API_BASE}/api/todos?${todosParams}`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/messages`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/sprints`, { headers: authHeaders() }),
       ]);
 
       if (todosRes.ok) {
@@ -52,6 +58,11 @@ export function usePolling() {
         setMessages(messagesData.messages || []);
       }
 
+      if (sprintsRes.ok) {
+        const sprintsData = await sprintsRes.json();
+        setSprints(sprintsData.sprints || []);
+      }
+
       setIsConnected(true);
       setLastFetchTime(Date.now());
     } catch (error) {
@@ -60,7 +71,7 @@ export function usePolling() {
     } finally {
       isPollingRef.current = false;
     }
-  }, [currentSessionId, setTodos, setMessages, setIsConnected, setLastFetchTime]);
+  }, [activeSprint, currentSessionId, setTodos, setMessages, setSprints, setIsConnected, setLastFetchTime]);
 
   useEffect(() => {
     fetchData();
