@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { Filter, Plus, ListTree } from 'lucide-react';
+import { Plus, ListTree } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { NewTicketModal } from './NewTicketModal';
@@ -23,7 +23,6 @@ const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'complet
 
 export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTodo, isLoading }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
@@ -33,10 +32,8 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
     return Array.from(set).sort();
   }, [todos]);
 
-  const filteredTodos = useMemo(
-    () => selectedProject ? todos.filter((t) => t.project === selectedProject) : todos,
-    [todos, selectedProject]
-  );
+  const hasProjects = projects.length > 0;
+  const filteredTodos = useMemo(() => todos, [todos]);
 
   const childTodosMap = useMemo(() => {
     const map = new Map<string, Todo[]>();
@@ -139,7 +136,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
   }
 
   return (
-    <div>
+    <div data-has-projects={hasProjects}>
       <div className="mb-4 flex items-center gap-2">
         <button
           onClick={() => setShowNewTicket(true)}
@@ -154,28 +151,6 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
           <Plus className="h-4 w-4" />
           New Ticket
         </button>
-
-        {projects.length > 0 && (
-          <>
-          <div className="mx-1 h-5 w-px" style={{ background: 'var(--border)' }} />
-          <Filter className="h-4 w-4" style={{ color: 'var(--muted)' }} />
-          <select
-            value={selectedProject ?? ''}
-            onChange={(e) => setSelectedProject(e.target.value || null)}
-            className="rounded-md px-3 py-1.5 text-sm outline-none transition-colors"
-            style={{
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-            }}
-          >
-            <option value="">All Projects</option>
-            {projects.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-          </>
-        )}
 
         {activeSprintId ? (
           <span

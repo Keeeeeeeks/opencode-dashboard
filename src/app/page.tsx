@@ -19,7 +19,17 @@ import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
-  const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
+  const {
+    todos,
+    messages,
+    sprints,
+    projects,
+    activeSprint,
+    selectedProject,
+    setActiveSprint,
+    setSelectedProject,
+    isConnected,
+  } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
@@ -33,6 +43,12 @@ export default function Dashboard() {
     const hasLight = document.documentElement.classList.contains('light');
     setIsDark(!hasLight);
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectFromUrl = params.get('project');
+    setSelectedProject(projectFromUrl || null);
+  }, [setSelectedProject]);
 
   useEffect(() => {
     try {
@@ -77,6 +93,20 @@ export default function Dashboard() {
   };
 
   const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
+
+  const handleProjectChange = (value: string) => {
+    const nextProject = value || null;
+    setSelectedProject(nextProject);
+
+    const nextUrl = new URL(window.location.href);
+    if (nextProject) {
+      nextUrl.searchParams.set('project', nextProject);
+    } else {
+      nextUrl.searchParams.delete('project');
+    }
+
+    window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  };
 
   return (
     <AuthGuard>
@@ -128,6 +158,30 @@ export default function Dashboard() {
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
+              </div>
+
+              <div className="flex items-center">
+                <select
+                  value={selectedProject ?? ''}
+                  onChange={(event) => handleProjectChange(event.target.value)}
+                  className="rounded-md px-2.5 py-1.5 text-xs font-medium outline-none"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <option value="">All Projects</option>
+                  {projects.map((project) => (
+                    <option
+                      key={project.id}
+                      value={project.id}
+                      style={project.color ? { color: project.color } : undefined}
+                    >
+                      {project.color ? `● ${project.name}` : project.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center">

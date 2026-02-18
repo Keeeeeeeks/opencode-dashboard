@@ -7,7 +7,9 @@ interface DashboardState {
   todos: Todo[];
   messages: Message[];
   sprints: Sprint[];
+  projects: Array<{ id: string; name: string; color: string | null }>;
   activeSprint: string | null;
+  selectedProject: string | null;
   currentSessionId: string | null;
   isConnected: boolean;
   lastFetchTime: number | null;
@@ -15,7 +17,9 @@ interface DashboardState {
   setTodos: (todos: Todo[]) => void;
   setMessages: (messages: Message[]) => void;
   setSprints: (sprints: Sprint[]) => void;
+  setProjects: (projects: Array<{ id: string; name: string; color: string | null }>) => void;
   setActiveSprint: (id: string | null) => void;
+  setSelectedProject: (projectId: string | null) => void;
   setCurrentSessionId: (sessionId: string | null) => void;
   setIsConnected: (connected: boolean) => void;
   setLastFetchTime: (time: number) => void;
@@ -29,7 +33,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   todos: [],
   messages: [],
   sprints: [],
+  projects: [],
   activeSprint: null,
+  selectedProject: null,
   currentSessionId: null,
   isConnected: false,
   lastFetchTime: null,
@@ -37,7 +43,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setTodos: (todos) => set({ todos }),
   setMessages: (messages) => set({ messages }),
   setSprints: (sprints) => set({ sprints }),
+  setProjects: (projects) => set({ projects }),
   setActiveSprint: (activeSprint) => set({ activeSprint }),
+  setSelectedProject: (selectedProject) => set({ selectedProject }),
   setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
   setIsConnected: (connected) => set({ isConnected: connected }),
   setLastFetchTime: (time) => set({ lastFetchTime: time }),
