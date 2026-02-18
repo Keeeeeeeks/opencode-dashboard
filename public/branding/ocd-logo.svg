@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 240" role="img" aria-label="OCD OpenClaw Dashboard brand mark">
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#1b1b23" />
+      <stop offset="100%" stop-color="#121217" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="560" height="240" rx="28" fill="url(#bg)" stroke="#ff3b30" stroke-width="6" />
+  <text x="50" y="110" font-family="'Comic Sans MS','Comic Sans',cursive" font-size="120" fill="#ffffff" stroke="#ff3b30" stroke-width="4" paint-order="stroke">
+    OCD
+  </text>
+  <text x="52" y="170" font-family="'Comic Sans MS','Comic Sans',cursive" font-size="42" fill="#ffffff" stroke="#ff3b30" stroke-width="2" paint-order="stroke">
+    OpenClaw Dashboard
+  </text>
+  <!-- Mascot: lobster in polo pointing at kanban board -->
+  <g transform="translate(320,40)">
+    <!-- body -->
+    <ellipse cx="70" cy="80" rx="28" ry="36" fill="#ff6b6b" stroke="#f1152b" stroke-width="3" />
+    <!-- head -->
+    <circle cx="70" cy="40" r="24" fill="#ff6b6b" stroke="#f1152b" stroke-width="3" />
+    <!-- eyes -->
+    <circle cx="60" cy="32" r="5" fill="#ffffff" />
+    <circle cx="80" cy="32" r="5" fill="#ffffff" />
+    <circle cx="60" cy="32" r="2.2" fill="#202020" />
+    <circle cx="80" cy="32" r="2.2" fill="#202020" />
+    <!-- antenna -->
+    <path d="M60 16 Q40 0 30 12" stroke="#ff6b6b" stroke-width="4" fill="none" stroke-linecap="round" />
+    <path d="M80 16 Q100 0 110 12" stroke="#ff6b6b" stroke-width="4" fill="none" stroke-linecap="round" />
+    <!-- polo shirt -->
+    <path d="M42 70 Q70 60 98 70 L102 120 L38 120 Z" fill="#4a77ff" stroke="#1b3ddd" stroke-width="4" />
+    <path d="M70 60 L60 90" stroke="#1b3ddd" stroke-width="4" />
+    <path d="M70 60 L80 90" stroke="#1b3ddd" stroke-width="4" />
+    <!-- claws -->
+    <path d="M38 84 Q20 80 16 94 Q30 94 34 104" fill="#ff6b6b" stroke="#f1152b" stroke-width="4" stroke-linejoin="round" />
+    <path d="M102 84 Q120 80 124 94 Q110 94 106 104" fill="#ff6b6b" stroke="#f1152b" stroke-width="4" stroke-linejoin="round" />
+    <!-- legs -->
+    <g stroke="#f1152b" stroke-width="4" stroke-linecap="round">
+      <path d="M54 118 Q48 134 42 138" />
+      <path d="M70 122 Q70 140 70 150" />
+      <path d="M86 118 Q92 134 98 138" />
+    </g>
+    <!-- pointing arm -->
+    <path d="M106 92 Q140 80 160 70" stroke="#f1152b" stroke-width="6" fill="none" stroke-linecap="round" />
+    <circle cx="162" cy="68" r="8" fill="#ff6b6b" stroke="#f1152b" stroke-width="3" />
+    <!-- mini kanban board -->
+    <rect x="170" y="26" width="80" height="60" rx="8" fill="#ffffff" stroke="#ff3b30" stroke-width="4" />
+    <line x1="170" y1="46" x2="250" y2="46" stroke="#ff3b30" stroke-width="3" />
+    <line x1="196" y1="26" x2="196" y2="86" stroke="#ff3b30" stroke-width="3" />
+    <line x1="222" y1="26" x2="222" y2="86" stroke="#ff3b30" stroke-width="3" />
+    <circle cx="183" cy="36" r="5" fill="#1b3ddd" />
+    <circle cx="209" cy="36" r="5" fill="#ff6b6b" />
+    <circle cx="235" cy="36" r="5" fill="#1b3ddd" />
+  </g>
+</svg>

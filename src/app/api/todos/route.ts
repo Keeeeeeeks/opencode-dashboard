@@ -5,6 +5,7 @@ import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware
 
 const CreateTodoSchema = z.object({
   id: z.string().optional(),
+  name: z.string().optional(),
   content: z.string(),
   status: z.enum(['pending', 'in_progress', 'blocked', 'completed', 'cancelled', 'icebox']).optional(),
   priority: z.enum(['low', 'medium', 'high']).optional(),
@@ -142,6 +143,7 @@ export async function POST(request: NextRequest) {
 
     if (data.id) {
       todo = db.updateTodo(data.id, {
+        name: data.name ?? null,
         content: data.content,
         status: data.status || 'pending',
         priority: data.priority || 'medium',
@@ -154,6 +156,7 @@ export async function POST(request: NextRequest) {
     } else {
       todo = db.createTodo({
         id: `todo_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        name: data.name ?? null,
         content: data.content,
         status: data.status || 'pending',
         priority: data.priority || 'medium',
@@ -226,6 +229,7 @@ export async function PUT(request: NextRequest) {
 
       if (existingTodo) {
           db.updateTodo(todoData.id, {
+          name: todoData.name ?? null,
           content: todoData.content,
           status: todoData.status || 'pending',
            priority: todoData.priority || 'medium',
@@ -242,6 +246,7 @@ export async function PUT(request: NextRequest) {
       } else {
         db.createTodo({
           id: todoData.id,
+          name: todoData.name ?? null,
           content: todoData.content,
           status: todoData.status || 'pending',
            priority: todoData.priority || 'medium',

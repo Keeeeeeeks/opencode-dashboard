@@ -4,6 +4,7 @@
 
 export interface Todo {
   id: string;
+  name: string | null;
   session_id: string | null;
   content: string;
   status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox';

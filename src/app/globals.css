@@ -200,3 +200,23 @@ body {
 .stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
 .stagger-children > *:nth-child(4) { animation-delay: 0.20s; }
 .stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+
+/* ─── Kanban Responsive Grid ─── */
+
+@media (min-width: 768px) {
+  .kanban-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .kanban-grid > * {
+    width: auto !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .kanban-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
