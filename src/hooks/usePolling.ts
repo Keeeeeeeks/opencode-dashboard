@@ -4,7 +4,6 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useDashboardStore } from '@/stores/dashboard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
-const POLL_INTERVAL = 3000;
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
 
 function authHeaders(): HeadersInit {
@@ -29,7 +28,6 @@ export function usePolling() {
   } = useDashboardStore();
 
   const isPollingRef = useRef(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchData = useCallback(async () => {
     if (isPollingRef.current) return;
@@ -111,13 +109,6 @@ export function usePolling() {
 
   useEffect(() => {
     fetchData();
-    intervalRef.current = setInterval(fetchData, POLL_INTERVAL);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
   }, [fetchData]);
 
   const updateTodoStatus = useCallback(

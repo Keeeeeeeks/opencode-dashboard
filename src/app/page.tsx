@@ -7,6 +7,7 @@ import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
 import { useAuthStore } from '@/stores/auth';
 import { usePolling } from '@/hooks/usePolling';
+import { useSSE } from '@/hooks/useSSE';
 import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
@@ -31,6 +32,7 @@ export default function Dashboard() {
     isConnected,
   } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
+  const { isSSEConnected } = useSSE(fetchData);
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
@@ -108,6 +110,14 @@ export default function Dashboard() {
     window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
   };
 
+  const connectionDotColor = isSSEConnected ? 'var(--ok)' : isConnected ? '#f59e0b' : 'var(--danger)';
+  const connectionShadow = isSSEConnected
+    ? '0 0 8px rgba(34, 197, 94, 0.4)'
+    : isConnected
+      ? '0 0 8px rgba(245, 158, 11, 0.4)'
+      : '0 0 8px rgba(239, 68, 68, 0.4)';
+  const connectionLabel = isSSEConnected ? 'Real-time' : isConnected ? 'Polling' : 'Disconnected';
+
   return (
     <AuthGuard>
       <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -149,14 +159,12 @@ export default function Dashboard() {
                 <span
                   className="h-2 w-2 rounded-full"
                   style={{
-                    background: isConnected ? 'var(--ok)' : 'var(--danger)',
-                    boxShadow: isConnected
-                      ? '0 0 8px rgba(34, 197, 94, 0.4)'
-                      : '0 0 8px rgba(239, 68, 68, 0.4)',
+                    background: connectionDotColor,
+                    boxShadow: connectionShadow,
                   }}
                 />
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
+                  {connectionLabel}
                 </span>
               </div>
 

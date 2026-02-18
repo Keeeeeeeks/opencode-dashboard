@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 const MarkReadSchema = z.object({
   ids: z.array(z.string()),
 });
-
-type MarkReadRequest = z.infer<typeof MarkReadSchema>;
 
 /**
  * GET /api/messages
@@ -84,6 +83,12 @@ export async function POST(request: NextRequest) {
     });
 
     const successCount = results.filter(Boolean).length;
+
+    eventBus.publish({
+      type: 'message:created',
+      payload: {},
+      timestamp: Date.now(),
+    });
 
     return NextResponse.json(
       { success: true, marked: successCount, total: data.ids.length },
