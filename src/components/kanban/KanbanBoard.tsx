@@ -21,7 +21,7 @@ import type { KanbanBoardProps, Todo } from './types';
 
 const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'completed', 'icebox'];
 
-export function KanbanBoard({ todos, activeSprintId, onStatusChange, isLoading }: KanbanBoardProps) {
+export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTodo, isLoading }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
@@ -108,12 +108,12 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, isLoading }
 
   if (isLoading) {
     return (
-      <div className="overflow-x-auto pb-2" style={{ scrollbarGutter: 'stable' }}>
-      <div className="grid gap-4 stagger-children" style={{ gridTemplateColumns: 'repeat(5, minmax(320px, 1fr))' }}>
+      <div className="overflow-x-auto pb-2 snap-x snap-mandatory md:snap-none" style={{ scrollbarGutter: 'stable' }}>
+      <div className="grid gap-4 stagger-children" style={{ gridTemplateColumns: 'repeat(5, minmax(280px, 1fr))' }}>
         {columns.map((status) => (
           <div
             key={status}
-            className="min-h-[500px] rounded-xl border-t-2"
+            className="min-h-[500px] rounded-xl border-t-2 snap-center shrink-0"
             style={{
               background: 'var(--card)',
               borderColor: 'var(--border)',
@@ -199,19 +199,21 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, isLoading }
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="overflow-x-auto pb-2" style={{ scrollbarGutter: 'stable' }}>
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(5, minmax(320px, 1fr))' }}>
+        <div className="overflow-x-auto pb-2 snap-x snap-mandatory md:snap-none" style={{ scrollbarGutter: 'stable', WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-4 kanban-grid">
             {columns.map((status) => (
-              <KanbanColumn
-                key={status}
-                title={status}
-                status={status}
-                todos={filteredTodos.filter((t) => t.status === status)}
-                onStatusChange={onStatusChange}
-                childTodosMap={childTodosMap}
-                expandedParents={expandedParents}
-                onToggleExpand={handleToggleExpand}
-              />
+              <div key={status} className="w-[85vw] shrink-0 snap-center sm:w-[60vw] md:w-auto md:shrink md:snap-align-none" style={{ minWidth: 0 }}>
+                <KanbanColumn
+                  title={status}
+                  status={status}
+                  todos={filteredTodos.filter((t) => t.status === status)}
+                  onStatusChange={onStatusChange}
+                  onSelectTodo={onSelectTodo}
+                  childTodosMap={childTodosMap}
+                  expandedParents={expandedParents}
+                  onToggleExpand={handleToggleExpand}
+                />
+              </div>
             ))}
           </div>
         </div>

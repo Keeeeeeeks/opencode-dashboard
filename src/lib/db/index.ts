@@ -148,6 +148,9 @@ function initializeDatabase(): Database.Database {
     db.exec('ALTER TABLE todos ADD COLUMN completed_at INTEGER');
     db.exec("UPDATE todos SET completed_at = updated_at WHERE status = 'completed' AND completed_at IS NULL");
   }
+  if (!columns.some((c) => c.name === 'name')) {
+    db.exec('ALTER TABLE todos ADD COLUMN name TEXT');
+  }
 
   return db;
 }
@@ -178,14 +181,15 @@ const db: DatabaseOperations = {
     }
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const completedAt = todo.status === 'completed' ? now : null;
 
     stmt.run(
       todo.id,
+      todo.name ?? null,
       todo.session_id,
       todo.content,
       todo.status,
@@ -317,11 +321,12 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
+      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
       WHERE id = ?
     `);
 
     stmt.run(
+      updated.name ?? null,
       updated.session_id,
       updated.content,
       updated.status,

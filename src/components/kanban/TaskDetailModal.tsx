@@ -266,8 +266,13 @@ export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDet
                 {todo.id}
               </p>
               <h2 className="text-base font-semibold leading-snug" style={{ color: 'var(--text-strong)' }}>
-                {todo.content}
+                {todo.name || todo.content}
               </h2>
+              {todo.name && (
+                <p className="text-sm mt-1 leading-relaxed" style={{ color: 'var(--text)' }}>
+                  {todo.content}
+                </p>
+              )}
             </div>
             <button
               onClick={onClose}

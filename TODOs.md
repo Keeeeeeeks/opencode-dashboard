@@ -13,43 +13,170 @@ Reference docs:
 
 > These are blocking. Nothing else ships until auth works.
 
-- [ ] **0.1** Add `Authorization: Bearer <DASHBOARD_API_KEY>` middleware to all API routes
-  - Create `src/lib/auth/middleware.ts`
-  - Validate against `process.env.DASHBOARD_API_KEY`
-  - Return 401 on missing/invalid token
-  - Apply to: `/api/events` POST, `/api/todos` POST, `/api/messages` POST, `/api/sessions` POST
-  - Read endpoints (GET) also require auth — dashboard is private
-- [ ] **0.2** Fix CORS — replace `Access-Control-Allow-Origin: *` with allowlist
-  - Read `ALLOWED_ORIGINS` from env, parse comma-separated
-  - Check `Origin` header against allowlist, reflect matching origin
-  - Fix invalid `localhost:*` header in `/api/events/route.ts` line 69
-  - Apply to all 4 route files + all OPTIONS handlers
-- [ ] **0.3** Add rate limiting to write endpoints
-  - In-memory sliding window (no new deps needed for MVP)
-  - Config from env: `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS`
-  - Apply to POST endpoints only
-- [ ] **0.4** Update `opencode-hook/dashboard-hook.ts` to send API key
-  - Add `Authorization: Bearer ${process.env.DASHBOARD_API_KEY}` header to all fetch calls
-  - Update hook README
+- [x] **0.1** Add `Authorization: Bearer <DASHBOARD_API_KEY>` middleware to all API routes
+  - `src/lib/auth/middleware.ts` — timing-safe Bearer token validation + audit logging
+  - Applied to all 16 route files (GET + POST/PUT/DELETE)
+- [x] **0.2** Fix CORS — replace `Access-Control-Allow-Origin: *` with allowlist
+  - `corsHeaders()` reads `ALLOWED_ORIGINS` env, reflects matching origin, sets `Vary: Origin`
+  - Applied to all route files + OPTIONS handlers
+- [x] **0.3** Add rate limiting to write endpoints
+  - In-memory sliding window in `checkRateLimit()`, configurable via env
+  - Applied to all POST/PUT/DELETE endpoints, returns `Retry-After` header
+- [x] **0.4** Update `opencode-hook/dashboard-hook.ts` to send API key
+  - `getAuthHeaders()` sends `Authorization: Bearer ${DASHBOARD_API_KEY}` on all fetch calls
 
 ---
 
-## Phase 1: Auth System
+## Phase 1: Auth, Projects & Team
 
-- [ ] **1.1** Create `users` and `auth_sessions` tables in SQLite (see ARCHITECTURE.md schema)
-- [ ] **1.2** Build `POST /api/auth/github` endpoint
-   - Accept `{ code }` from OAuth flow
-   - Exchange code for GitHub access token (server-side, keeps client_secret safe)
-   - Upsert `users` row (github_id, username, avatar_url)
-   - Create `auth_sessions` row with SHA-256 hashed bearer token
-   - Return `{ token, user }` to client
-- [ ] **1.3** Build `GET /api/auth/verify` endpoint
-   - Accept bearer token, look up `auth_sessions`, check expiry
-   - Return `{ valid: boolean, user }` — used by clients on app open
-- [ ] **1.4** Replace API key middleware (from 0.1) with session token middleware
-   - API key still valid for hook-to-backend (machine auth)
-   - Session token valid for client-to-backend (user auth)
-   - Middleware checks for either
+> Goal: GitHub login, project-scoped data across all tables, team allowlist
+> managed from dashboard UI. Tailscale remains the network gate; GitHub auth
+> gates the app layer. Path B design — no multi-tenant encryption yet.
+
+### 1A — Database: project_id everywhere + users/team tables
+
+- [ ] **1A.1** Add `project_id TEXT` column to all tables missing it
+  - `messages` — which venture produced this message
+  - `sessions` — which venture this agent session belongs to
+  - `tasks` (v2) — add `project_id` alongside existing `tag` (tag = workflow label, project = venture)
+  - `sprints` — scope sprints per venture
+  - `todo_comments` — inherit via todo or explicit column
+  - All columns nullable for backwards compat; existing rows get `project_id = NULL` (= "unscoped")
+  - Migration in `src/lib/db/index.ts` following existing ALTER TABLE pattern
+- [ ] **1A.2** Create `users` table
+  ```sql
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    github_id INTEGER UNIQUE NOT NULL,
+    username TEXT NOT NULL,
+    display_name TEXT,
+    avatar_url TEXT,
+    role TEXT NOT NULL DEFAULT 'viewer',  -- 'owner' | 'admin' | 'viewer'
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  ```
+- [ ] **1A.3** Create `auth_sessions` table
+  ```sql
+  CREATE TABLE auth_sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    token_hash TEXT NOT NULL,       -- SHA-256 of bearer token
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  ```
+- [ ] **1A.4** Create `invite_links` table
+  ```sql
+  CREATE TABLE invite_links (
+    id TEXT PRIMARY KEY,            -- short random ID (URL slug)
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL DEFAULT 'viewer',
+    expires_at INTEGER NOT NULL,    -- 24h from creation
+    used_by INTEGER REFERENCES users(id),
+    used_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  ```
+- [ ] **1A.5** Create `projects` table (registry of known ventures)
+  ```sql
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,            -- 'cookbook', 'crypto-attestation', etc.
+    name TEXT NOT NULL,
+    description TEXT,
+    color TEXT,                     -- hex color for UI badges
+    created_at INTEGER NOT NULL
+  );
+  ```
+  Seed with existing project values from todos table on migration.
+
+### 1B — GitHub OAuth flow
+
+- [ ] **1B.1** Create GitHub OAuth App (or use existing)
+  - Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` to `.env.example`
+  - Callback URL: `http://127.0.0.1:3000/api/auth/callback`
+- [ ] **1B.2** Build `GET /api/auth/login` — redirects to GitHub OAuth authorize URL
+  - Include `state` param (random, stored in cookie) for CSRF protection
+- [ ] **1B.3** Build `GET /api/auth/callback` — handles OAuth redirect
+  - Verify `state` matches cookie
+  - Exchange `code` for GitHub access token (server-side)
+  - Fetch user profile from GitHub API (`/user`)
+  - Check allowlist: if `users` table is empty, first user becomes `owner`
+  - If `users` table is non-empty, user must already exist OR have a valid invite link
+  - Upsert `users` row (github_id, username, avatar_url)
+  - Create `auth_sessions` row with SHA-256 hashed bearer token
+  - Set token in httpOnly cookie + return to dashboard
+- [ ] **1B.4** Build `GET /api/auth/verify` endpoint
+  - Read token from cookie (or Authorization header for API clients)
+  - Look up `auth_sessions`, check expiry
+  - Return `{ valid, user }` — used by frontend on app open
+- [ ] **1B.5** Build `POST /api/auth/logout`
+  - Delete `auth_sessions` row, clear cookie
+- [ ] **1B.6** Support multiple GitHub accounts per browser
+  - Account switcher dropdown showing all accounts that have authenticated
+  - "Add another account" triggers new OAuth flow with `login` param (GitHub re-prompts)
+  - Active session stored in cookie; switching accounts swaps the active session token
+
+### 1C — Update auth middleware
+
+- [ ] **1C.1** Extend `validateAuth()` to accept session tokens (cookie or header)
+  - API key still valid for hook-to-backend (machine auth)
+  - Session token valid for browser-to-backend (user auth)
+  - Middleware checks for either; attaches `user` to request context if session-authed
+- [ ] **1C.2** Add `requireRole(minRole)` middleware helper
+  - `owner` > `admin` > `viewer`
+  - Write endpoints require `admin`+; read endpoints require `viewer`+
+  - Settings/team management requires `owner`
+
+### 1D — Team management (Settings UI)
+
+- [ ] **1D.1** Build `GET /api/settings/team` — returns all users with roles
+  - Requires `owner` role
+- [ ] **1D.2** Build `POST /api/settings/team/invite` — two modes:
+  - **Direct add**: `{ github_username, role }` — adds user to allowlist immediately
+    - Fetches GitHub user ID via API to validate username exists
+    - Creates `users` row with `role` (no auth_session yet — they log in later)
+  - **Invite link**: `{ role, expires_in_hours }` — creates `invite_links` row
+    - Returns URL: `/invite/{id}`
+    - Default 24h expiry, single use
+- [ ] **1D.3** Build `DELETE /api/settings/team/:userId` — remove user + their sessions
+  - Cannot remove self (owner)
+- [ ] **1D.4** Build `PATCH /api/settings/team/:userId` — update role
+- [ ] **1D.5** Build `GET /invite/:id` page
+  - Shows: "You've been invited to OpenCode Dashboard. Sign in with GitHub to continue."
+  - On GitHub auth, checks invite validity (not expired, not used)
+  - Creates user, marks invite as used, redirects to dashboard
+- [ ] **1D.6** Build Settings page at `/settings`
+  - **Team section**: list of users with avatar, username, role, [Remove] button
+  - **Add member**: text input for GitHub username + role selector + [Invite] button
+  - **Invite link**: [Generate link] button → copyable URL with expiry countdown
+  - **Projects section**: list of registered ventures with color badges (read-only for now)
+  - Only accessible to `owner` role
+
+### 1E — Project selector in dashboard header
+
+- [ ] **1E.1** Add project selector dropdown to header (next to sprint picker)
+  - "All Projects" default view
+  - List populated from `projects` table
+  - Selection stored in URL param `?project=cookbook` for shareable links
+- [ ] **1E.2** Filter all data by selected project
+  - Todos, messages, sessions, sprints, tasks, analytics — all scoped
+  - "All Projects" shows everything (current behavior)
+- [ ] **1E.3** Update hook to send `project` field
+  - Add `PROJECT_ID` to hook env config
+  - Hook sends `project` on all event/todo/session POST calls
+  - Dashboard tags incoming data with project_id
+
+### 1F — Login page
+
+- [ ] **1F.1** Build `/login` page
+  - Clean page with "Sign in with GitHub" button
+  - If already authenticated, redirect to dashboard
+  - After auth, redirect to original requested URL
+- [ ] **1F.2** Add auth guard to all pages
+  - Check session on page load (via `GET /api/auth/verify`)
+  - If not authenticated, redirect to `/login`
+  - Dashboard, settings, analytics — all gated
 
 ---
 

@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
 import { usePolling } from '@/hooks/usePolling';
-import { Moon, Sun, Menu, X, Plus } from 'lucide-react';
+import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
+import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
 import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
+import type { Todo } from '@/components/kanban/types';
 
 export default function Dashboard() {
   const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
@@ -21,10 +23,31 @@ export default function Dashboard() {
   const [isDark, setIsDark] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
     setIsDark(!hasLight);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('oc-panel-collapsed');
+      if (stored === 'true') setPanelCollapsed(true);
+    } catch {}
+  }, []);
+
+  const togglePanel = useCallback(() => {
+    setPanelCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('oc-panel-collapsed', String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleSelectTodo = useCallback((todo: Todo) => {
+    setSelectedTodo(todo);
   }, []);
 
   useEffect(() => {
@@ -156,27 +179,36 @@ export default function Dashboard() {
 
               <Link
                 href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/analytics`}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium tracking-wide transition-colors"
                 style={{
-                  background: 'var(--accent-subtle)',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
+                  background: 'transparent',
+                  color: 'var(--muted)',
+                  border: '1px solid var(--border)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-hover)';
+                  e.currentTarget.style.color = 'var(--text)';
+                  e.currentTarget.style.borderColor = 'var(--border-strong)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'var(--muted)';
+                  e.currentTarget.style.borderColor = 'var(--border)';
                 }}
               >
                 Analytics
               </Link>
 
-              <Link
-                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/v2`}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
-                style={{
-                  background: 'var(--accent-subtle)',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                }}
+              <button
+                onClick={togglePanel}
+                className="hidden md:flex rounded-lg p-2 transition-colors"
+                style={{ color: 'var(--muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                aria-label={panelCollapsed ? 'Show sidebar' : 'Hide sidebar'}
               >
-                V2
-              </Link>
+                {panelCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
+              </button>
 
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -236,24 +268,27 @@ export default function Dashboard() {
               todos={todos}
               activeSprintId={activeSprint}
               onStatusChange={handleStatusChange}
+              onSelectTodo={handleSelectTodo}
               isLoading={isLoading}
             />
           </div>
 
           <div
             className={cn(
-              'w-full md:w-80 lg:w-96 shrink-0',
-              'fixed inset-y-0 right-0 z-40 p-4 pt-20 md:p-0 md:pt-0',
-              'md:relative',
-              'transform transition-transform duration-300 ease-in-out',
+              'shrink-0 overflow-hidden',
+              'fixed inset-y-0 right-0 z-40 p-4 pt-20',
+              'md:relative md:p-0 md:pt-0 md:z-auto',
+              'transform transition-all duration-300 ease-in-out',
               'md:transform-none',
-              sidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
+              sidebarOpen ? 'translate-x-0 w-full' : 'translate-x-full md:translate-x-0',
+              panelCollapsed ? 'md:w-0 md:opacity-0 md:pointer-events-none' : 'md:w-80 lg:w-96 md:opacity-100'
             )}
             style={{
               background: sidebarOpen ? 'var(--bg)' : undefined,
+              transitionProperty: 'width, opacity, transform',
             }}
           >
-            <div className="h-full md:sticky md:top-24">
+            <div className="h-full md:sticky md:top-24 w-80 lg:w-96">
               <div
                 className="h-[calc(100vh-8rem)] md:h-[calc(100vh-7rem)] rounded-xl p-4 flex flex-col"
                 style={{
@@ -288,6 +323,13 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      <TaskDetailModal
+        todo={selectedTodo}
+        open={selectedTodo !== null}
+        onClose={() => setSelectedTodo(null)}
+        onStatusChange={handleStatusChange}
+      />
     </div>
   );
 }

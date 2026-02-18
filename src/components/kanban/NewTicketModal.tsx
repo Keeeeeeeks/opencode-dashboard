@@ -32,6 +32,7 @@ function authHeaders(): HeadersInit {
 
 export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps) {
   const sprints = useDashboardStore((s) => s.sprints);
+  const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [project, setProject] = useState('');
@@ -39,13 +40,14 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const nameRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Focus trap + autofocus
   useEffect(() => {
     if (open) {
-      requestAnimationFrame(() => contentRef.current?.focus());
+      requestAnimationFrame(() => nameRef.current?.focus());
     }
   }, [open]);
 
@@ -96,6 +98,7 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
   }, [open, sprintId, sprints]);
 
   const reset = () => {
+    setName('');
     setContent('');
     setPriority('medium');
     setProject('');
@@ -113,6 +116,7 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
 
     try {
       const body: Record<string, string | null> = {
+        name: name.trim() || null,
         content: trimmed,
         priority,
         status: 'pending',
@@ -189,7 +193,32 @@ export function NewTicketModal({ open, onClose, onCreated }: NewTicketModalProps
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* Content */}
+          <div>
+            <label
+              htmlFor="ticket-name"
+              className="block text-sm font-medium mb-1.5"
+              style={{ color: 'var(--text)' }}
+            >
+              Ticket Name
+            </label>
+            <input
+              ref={nameRef}
+              id="ticket-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Short title for this ticket"
+              className="w-full rounded-lg px-3 py-2 text-sm transition-colors placeholder:opacity-40 focus:outline-none focus:ring-2"
+              style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                // @ts-expect-error CSS custom property
+                '--tw-ring-color': 'var(--accent)',
+              }}
+            />
+          </div>
+
           <div>
             <label
               htmlFor="ticket-content"

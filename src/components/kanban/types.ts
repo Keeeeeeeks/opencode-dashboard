@@ -1,5 +1,6 @@
 export interface Todo {
   id: string;
+  name?: string | null;
   content: string;
   status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox';
   priority: 'high' | 'medium' | 'low';
@@ -18,6 +19,7 @@ export interface KanbanBoardProps {
   todos: Todo[];
   activeSprintId?: string | null;
   onStatusChange: (id: string, newStatus: Todo['status']) => void;
+  onSelectTodo?: (todo: Todo) => void;
   isLoading?: boolean;
 }
 
@@ -26,6 +28,7 @@ export interface KanbanColumnProps {
   status: Todo['status'];
   todos: Todo[];
   onStatusChange: (id: string, newStatus: Todo['status']) => void;
+  onSelectTodo?: (todo: Todo) => void;
   childTodosMap: Map<string, Todo[]>;
   expandedParents: Set<string>;
   onToggleExpand: (parentId: string) => void;
@@ -39,4 +42,5 @@ export interface KanbanCardProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   onStatusChange?: (id: string, status: Todo['status']) => void;
+  onSelectTodo?: (todo: Todo) => void;
 }

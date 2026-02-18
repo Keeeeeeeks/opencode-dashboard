@@ -7,7 +7,6 @@ import { formatDistanceToNow } from 'date-fns';
 import { GripVertical, Clock, User, FolderOpen, ChevronDown, ChevronRight, ListTree, MessageSquare, Timer, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDashboardStore } from '@/stores/dashboard';
-import { TaskDetailModal } from './TaskDetailModal';
 import type { KanbanCardProps, Todo } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
@@ -27,9 +26,8 @@ const priorityStyles: Record<Todo['priority'], { bg: string; color: string }> = 
   low: { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' },
 };
 
-export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded, onToggleExpand, onStatusChange }: KanbanCardProps) {
+export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded, onToggleExpand, onStatusChange, onSelectTodo }: KanbanCardProps) {
   const allSprints = useDashboardStore((s) => s.sprints);
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [commentCount, setCommentCount] = useState(todo.comment_count || 0);
   const [sprintDropdownOpen, setSprintDropdownOpen] = useState(false);
   const [localSprints, setLocalSprints] = useState(todo.sprints || []);
@@ -112,7 +110,7 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
         isSubtask ? 'p-2.5' : 'p-3',
         dragging && 'opacity-80 rotate-2 scale-105'
       )}
-      onClick={() => { if (!dragging) setDetailModalOpen(true); }}
+      onClick={() => { if (!dragging) onSelectTodo?.(todo); }}
       onMouseEnter={(e) => {
         if (!dragging) {
           e.currentTarget.style.borderColor = 'var(--border-strong)';
@@ -159,12 +157,29 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
                   : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
             )}
-            <p
-              className={cn('line-clamp-3', isSubtask ? 'text-xs' : 'text-sm')}
-              style={{ color: isSubtask ? 'var(--muted)' : 'var(--text)' }}
-            >
-              {todo.content}
-            </p>
+            {todo.name ? (
+              <>
+                <p
+                  className={cn('line-clamp-2 font-medium', isSubtask ? 'text-xs' : 'text-sm')}
+                  style={{ color: isSubtask ? 'var(--text)' : 'var(--text-strong)' }}
+                >
+                  {todo.name}
+                </p>
+                <p
+                  className={cn('line-clamp-2 mt-0.5', isSubtask ? 'text-[10px]' : 'text-xs')}
+                  style={{ color: 'var(--muted)' }}
+                >
+                  {todo.content}
+                </p>
+              </>
+            ) : (
+              <p
+                className={cn('line-clamp-3', isSubtask ? 'text-xs' : 'text-sm')}
+                style={{ color: isSubtask ? 'var(--muted)' : 'var(--text)' }}
+              >
+                {todo.content}
+              </p>
+            )}
           </div>
           
           <div className={cn('flex flex-wrap items-center gap-2', isSubtask ? 'mt-1.5' : 'mt-2')}>
@@ -319,12 +334,6 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
         </div>
       </div>
 
-      <TaskDetailModal
-        todo={todo}
-        open={detailModalOpen}
-        onClose={() => setDetailModalOpen(false)}
-        onStatusChange={onStatusChange ?? (() => {})}
-      />
     </div>
   );
 }

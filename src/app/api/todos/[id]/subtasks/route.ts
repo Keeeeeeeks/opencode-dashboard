@@ -74,6 +74,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const todo = db.createTodo({
       id: `todo_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      name: null,
       content: data.content,
       status: data.status || 'pending',
       priority: data.priority || 'medium',
