@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
+import { useAuthStore } from '@/stores/auth';
 import { usePolling } from '@/hooks/usePolling';
-import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
 import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
@@ -17,6 +18,7 @@ import type { Todo } from '@/components/kanban/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export default function Dashboard() {
+  const user = useAuthStore((state) => state.user);
   const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
   const [newTicketOpen, setNewTicketOpen] = useState(false);
@@ -200,6 +202,31 @@ export default function Dashboard() {
               >
                 Analytics
               </Link>
+
+              {user?.role === 'owner' ? (
+                <Link
+                  href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/settings`}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium tracking-wide transition-colors"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--bg-hover)';
+                    e.currentTarget.style.color = 'var(--text)';
+                    e.currentTarget.style.borderColor = 'var(--border-strong)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = 'var(--muted)';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  Settings
+                </Link>
+              ) : null}
 
               <button
                 onClick={togglePanel}
