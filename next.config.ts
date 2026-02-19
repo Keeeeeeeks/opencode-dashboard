@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_DASHBOARD_API_KEY: process.env.DASHBOARD_API_KEY || '',
     NEXT_PUBLIC_API_BASE: process.env.BASE_PATH || '',
+    NEXT_PUBLIC_DISABLE_AUTH: process.env.DISABLE_AUTH || '',
   },
 };
 
