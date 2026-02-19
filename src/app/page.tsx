@@ -8,15 +8,19 @@ import { useDashboardStore } from '@/stores/dashboard';
 import { useAuthStore } from '@/stores/auth';
 import { usePolling } from '@/hooks/usePolling';
 import { useSSE } from '@/hooks/useSSE';
-import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
+import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen, Settings, LayoutList, Bot, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
 import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
 import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
+import { AgentPanel } from '@/components/agents';
+import { LinearBoard } from '@/components/linear';
 import type { Todo } from '@/components/kanban/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+
+type DashboardTab = 'tasks' | 'agents' | 'linear';
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
@@ -40,6 +44,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('tasks');
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
@@ -318,50 +323,94 @@ export default function Dashboard() {
         <main className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
           <div className="flex flex-col gap-6 md:flex-row">
           <div className="flex-1 min-w-0">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2
-                  className="text-lg font-semibold tracking-tight"
-                  style={{ color: 'var(--text-strong)' }}
-                >
-                  Task Board
-                </h2>
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  Drag tasks between columns to update status
-                </p>
-              </div>
-              <button
-                onClick={() => setNewTicketOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
-                style={{
-                  background: 'var(--accent)',
-                  color: '#fff',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-              >
-                <Plus className="h-4 w-4" />
-                New Ticket
-              </button>
+            <div className="flex items-center gap-1 mb-5 rounded-lg p-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+              {([
+                { key: 'tasks' as const, label: 'Task Board', icon: <LayoutList className="h-3.5 w-3.5" /> },
+                { key: 'agents' as const, label: 'Agents', icon: <Bot className="h-3.5 w-3.5" /> },
+                { key: 'linear' as const, label: 'Linear', icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+              ]).map((tab) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all"
+                    style={{
+                      background: isActive ? 'var(--card)' : 'transparent',
+                      color: isActive ? 'var(--text-strong)' : 'var(--muted)',
+                      boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
+                      borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) e.currentTarget.style.color = 'var(--text)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) e.currentTarget.style.color = 'var(--muted)';
+                    }}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
-            <NewTicketModal
-              open={newTicketOpen}
-              onClose={() => setNewTicketOpen(false)}
-              onCreated={() => fetchData()}
-            />
-            <CreateSprintModal
-              open={newSprintOpen}
-              onClose={() => setNewSprintOpen(false)}
-              onCreated={() => fetchData()}
-            />
-            {selectedSprint && <SprintHeader sprint={selectedSprint} />}
-            <KanbanBoard
-              todos={todos}
-              activeSprintId={activeSprint}
-              onStatusChange={handleStatusChange}
-              onSelectTodo={handleSelectTodo}
-              isLoading={isLoading}
-            />
+
+            {activeTab === 'tasks' && (
+              <>
+                <div className="mb-4 flex items-start justify-between">
+                  <div>
+                    <h2
+                      className="text-lg font-semibold tracking-tight"
+                      style={{ color: 'var(--text-strong)' }}
+                    >
+                      Task Board
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                      Drag tasks between columns to update status
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setNewTicketOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
+                    style={{
+                      background: 'var(--accent)',
+                      color: '#fff',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Ticket
+                  </button>
+                </div>
+                <NewTicketModal
+                  open={newTicketOpen}
+                  onClose={() => setNewTicketOpen(false)}
+                  onCreated={() => fetchData()}
+                />
+                <CreateSprintModal
+                  open={newSprintOpen}
+                  onClose={() => setNewSprintOpen(false)}
+                  onCreated={() => fetchData()}
+                />
+                {selectedSprint && <SprintHeader sprint={selectedSprint} />}
+                <KanbanBoard
+                  todos={todos}
+                  activeSprintId={activeSprint}
+                  onStatusChange={handleStatusChange}
+                  onSelectTodo={handleSelectTodo}
+                  isLoading={isLoading}
+                />
+              </>
+            )}
+
+            {activeTab === 'agents' && (
+              <AgentPanel onRefresh={fetchData} />
+            )}
+
+            {activeTab === 'linear' && (
+              <LinearBoard onRefresh={fetchData} />
+            )}
           </div>
 
           <div
