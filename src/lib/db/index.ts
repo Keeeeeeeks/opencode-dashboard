@@ -15,6 +15,8 @@ import type {
   AuthSession,
   InviteLink,
   Project,
+  Agent,
+  AgentTask,
   StatusHistoryEntry,
   DatabaseOperations,
 } from './types';
@@ -131,6 +133,36 @@ function initializeDatabase(): Database.Database {
       PRIMARY KEY (task_id, id)
     );
 
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'sub-agent',
+      parent_agent_id TEXT REFERENCES agents(id),
+      status TEXT NOT NULL DEFAULT 'idle',
+      soul_md TEXT,
+      skills TEXT,
+      current_task_id TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      last_heartbeat INTEGER,
+      config TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_tasks (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id),
+      linear_issue_id TEXT,
+      project_id TEXT,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      blocked_reason TEXT,
+      blocked_at INTEGER,
+      started_at INTEGER,
+      completed_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
     CREATE TABLE IF NOT EXISTS todo_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
@@ -183,6 +215,12 @@ function initializeDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON auth_sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_invite_links_created_by ON invite_links(created_by);
+    CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+    CREATE INDEX IF NOT EXISTS idx_agents_type ON agents(type);
+    CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent_id ON agent_tasks(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_tasks_project_id ON agent_tasks(project_id);
   `);
 
   // Migration: add project column to todos if not present
@@ -1364,6 +1402,237 @@ const db: DatabaseOperations = {
     return rows.map((row) => row.tag);
   },
 
+  createAgent(agent: Omit<Agent, 'created_at'>): Agent {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO agents (
+        id,
+        name,
+        type,
+        parent_agent_id,
+        status,
+        soul_md,
+        skills,
+        current_task_id,
+        created_at,
+        last_heartbeat,
+        config
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      agent.id,
+      agent.name,
+      agent.type,
+      agent.parent_agent_id,
+      agent.status,
+      agent.soul_md,
+      agent.skills,
+      agent.current_task_id,
+      now,
+      agent.last_heartbeat,
+      agent.config
+    );
+
+    return {
+      ...agent,
+      created_at: now,
+    };
+  },
+
+  getAgent(id: string): Agent | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM agents WHERE id = ?');
+    return (stmt.get(id) as Agent) || null;
+  },
+
+  getAllAgents(filters?: { status?: string; type?: string; parent_agent_id?: string }): Agent[] {
+    const database = getDatabase();
+
+    let query = 'SELECT * FROM agents WHERE 1=1';
+    const params: string[] = [];
+
+    if (filters?.status) {
+      query += ' AND status = ?';
+      params.push(filters.status);
+    }
+
+    if (filters?.type) {
+      query += ' AND type = ?';
+      params.push(filters.type);
+    }
+
+    if (filters?.parent_agent_id) {
+      query += ' AND parent_agent_id = ?';
+      params.push(filters.parent_agent_id);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const stmt = database.prepare(query);
+    return stmt.all(...params) as Agent[];
+  },
+
+  updateAgent(id: string, updates: Partial<Omit<Agent, 'id' | 'created_at'>>): Agent {
+    const database = getDatabase();
+
+    const agent = db.getAgent(id);
+    if (!agent) {
+      throw new Error(`Agent with id ${id} not found`);
+    }
+
+    const updated: Agent = { ...agent, ...updates };
+
+    const stmt = database.prepare(`
+      UPDATE agents
+      SET
+        name = ?,
+        type = ?,
+        parent_agent_id = ?,
+        status = ?,
+        soul_md = ?,
+        skills = ?,
+        current_task_id = ?,
+        last_heartbeat = ?,
+        config = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(
+      updated.name,
+      updated.type,
+      updated.parent_agent_id,
+      updated.status,
+      updated.soul_md,
+      updated.skills,
+      updated.current_task_id,
+      updated.last_heartbeat,
+      updated.config,
+      id
+    );
+
+    return updated;
+  },
+
+  deleteAgent(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM agents WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  createAgentTask(task: Omit<AgentTask, 'created_at' | 'updated_at'>): AgentTask {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO agent_tasks (
+        id,
+        agent_id,
+        linear_issue_id,
+        project_id,
+        title,
+        status,
+        priority,
+        blocked_reason,
+        blocked_at,
+        started_at,
+        completed_at,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      task.id,
+      task.agent_id,
+      task.linear_issue_id,
+      task.project_id,
+      task.title,
+      task.status,
+      task.priority,
+      task.blocked_reason,
+      task.blocked_at,
+      task.started_at,
+      task.completed_at,
+      now,
+      now
+    );
+
+    return {
+      ...task,
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  getAgentTask(id: string): AgentTask | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM agent_tasks WHERE id = ?');
+    return (stmt.get(id) as AgentTask) || null;
+  },
+
+  getAgentTasks(agentId: string): AgentTask[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM agent_tasks WHERE agent_id = ? ORDER BY created_at DESC');
+    return stmt.all(agentId) as AgentTask[];
+  },
+
+  updateAgentTask(id: string, updates: Partial<Omit<AgentTask, 'id' | 'agent_id' | 'created_at'>>): AgentTask {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const task = db.getAgentTask(id);
+    if (!task) {
+      throw new Error(`Agent task with id ${id} not found`);
+    }
+
+    const updated: AgentTask = { ...task, ...updates, updated_at: now };
+
+    const stmt = database.prepare(`
+      UPDATE agent_tasks
+      SET
+        linear_issue_id = ?,
+        project_id = ?,
+        title = ?,
+        status = ?,
+        priority = ?,
+        blocked_reason = ?,
+        blocked_at = ?,
+        started_at = ?,
+        completed_at = ?,
+        updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(
+      updated.linear_issue_id,
+      updated.project_id,
+      updated.title,
+      updated.status,
+      updated.priority,
+      updated.blocked_reason,
+      updated.blocked_at,
+      updated.started_at,
+      updated.completed_at,
+      now,
+      id
+    );
+
+    return updated;
+  },
+
+  deleteAgentTask(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM agent_tasks WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
   close(): void {
     if (dbInstance) {
       dbInstance.close();
@@ -1387,6 +1656,8 @@ export type {
   AuthSession,
   InviteLink,
   Project,
+  Agent,
+  AgentTask,
   StatusHistoryEntry,
   DatabaseOperations,
 };
