@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -53,6 +54,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const data = UpdateSprintSchema.parse(body);
 
     const sprint = db.updateSprint(params.id, data);
+
+    eventBus.publish({
+      type: 'sprint:updated',
+      payload: { sprint },
+      timestamp: Date.now(),
+    });
+
     return NextResponse.json({ sprint }, { status: 200, headers: corsHeaders(request) });
   } catch (error) {
     if (error instanceof z.ZodError) {

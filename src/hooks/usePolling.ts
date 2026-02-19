@@ -4,7 +4,6 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useDashboardStore } from '@/stores/dashboard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
-const POLL_INTERVAL = 3000;
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
 
 function authHeaders(): HeadersInit {
@@ -20,14 +19,19 @@ export function usePolling() {
     setTodos,
     setMessages,
     setSprints,
+    setProjects,
+    setAgents,
+    setLinearProjects,
+    setLinearIssues,
+    setLinearWorkflowStates,
     setIsConnected,
     setLastFetchTime,
     currentSessionId,
     activeSprint,
+    selectedProject,
   } = useDashboardStore();
 
   const isPollingRef = useRef(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchData = useCallback(async () => {
     if (isPollingRef.current) return;
@@ -41,11 +45,38 @@ export function usePolling() {
       if (activeSprint) {
         todosParams.set('sprint_id', activeSprint);
       }
+      if (selectedProject) {
+        todosParams.set('project', selectedProject);
+      }
 
-      const [todosRes, messagesRes, sprintsRes] = await Promise.all([
+      const projectsRequest = fetch(`${API_BASE}/api/settings/projects`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const agentsRequest = fetch(`${API_BASE}/api/agents`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const linearIssuesRequest = fetch(`${API_BASE}/api/linear/issues`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const linearProjectsRequest = fetch(`${API_BASE}/api/linear/projects`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const [todosRes, messagesRes, sprintsRes, projectsRes, agentsRes, linearIssuesRes, linearProjectsRes] = await Promise.all([
         fetch(`${API_BASE}/api/todos?${todosParams}`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/messages`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/sprints`, { headers: authHeaders() }),
+        projectsRequest,
+        agentsRequest,
+        linearIssuesRequest,
+        linearProjectsRequest,
       ]);
 
       if (todosRes.ok) {
@@ -55,12 +86,43 @@ export function usePolling() {
 
       if (messagesRes.ok) {
         const messagesData = await messagesRes.json();
-        setMessages(messagesData.messages || []);
+        const messages = messagesData.messages || [];
+        setMessages(
+          selectedProject
+            ? messages.filter((message: { project_id?: string | null }) => message.project_id === selectedProject)
+            : messages
+        );
       }
 
       if (sprintsRes.ok) {
         const sprintsData = await sprintsRes.json();
-        setSprints(sprintsData.sprints || []);
+        const sprints = sprintsData.sprints || [];
+        setSprints(
+          selectedProject
+            ? sprints.filter((sprint: { project_id?: string | null }) => sprint.project_id === selectedProject)
+            : sprints
+        );
+      }
+
+      if (projectsRes?.ok) {
+        const projectsData = await projectsRes.json();
+        setProjects(projectsData.projects || []);
+      }
+
+      if (agentsRes?.ok) {
+        const agentsData = await agentsRes.json();
+        setAgents(agentsData.agents || []);
+      }
+
+      if (linearIssuesRes?.ok) {
+        const linearIssuesData = await linearIssuesRes.json();
+        setLinearIssues(linearIssuesData.issues || []);
+        setLinearWorkflowStates(linearIssuesData.workflow_states || []);
+      }
+
+      if (linearProjectsRes?.ok) {
+        const linearProjectsData = await linearProjectsRes.json();
+        setLinearProjects(linearProjectsData.projects || []);
       }
 
       setIsConnected(true);
@@ -71,17 +133,24 @@ export function usePolling() {
     } finally {
       isPollingRef.current = false;
     }
-  }, [activeSprint, currentSessionId, setTodos, setMessages, setSprints, setIsConnected, setLastFetchTime]);
+  }, [
+    activeSprint,
+    currentSessionId,
+    selectedProject,
+    setTodos,
+    setMessages,
+    setSprints,
+    setProjects,
+    setAgents,
+    setLinearProjects,
+    setLinearIssues,
+    setLinearWorkflowStates,
+    setIsConnected,
+    setLastFetchTime,
+  ]);
 
   useEffect(() => {
     fetchData();
-    intervalRef.current = setInterval(fetchData, POLL_INTERVAL);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
   }, [fetchData]);
 
   const updateTodoStatus = useCallback(

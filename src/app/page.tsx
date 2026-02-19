@@ -5,19 +5,38 @@ import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
 import { useDashboardStore } from '@/stores/dashboard';
+import { useAuthStore } from '@/stores/auth';
 import { usePolling } from '@/hooks/usePolling';
-import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { useSSE } from '@/hooks/useSSE';
+import { Moon, Sun, Menu, X, Plus, PanelRightClose, PanelRightOpen, Settings, LayoutList, Bot, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NewTicketModal } from '@/components/kanban/NewTicketModal';
 import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
 import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
+import { AgentPanel } from '@/components/agents';
+import { LinearBoard } from '@/components/linear';
 import type { Todo } from '@/components/kanban/types';
+import { AuthGuard } from '@/components/auth/AuthGuard';
+
+type DashboardTab = 'tasks' | 'agents' | 'linear';
 
 export default function Dashboard() {
-  const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
+  const user = useAuthStore((state) => state.user);
+  const {
+    todos,
+    messages,
+    sprints,
+    projects,
+    activeSprint,
+    selectedProject,
+    setActiveSprint,
+    setSelectedProject,
+    isConnected,
+  } = useDashboardStore();
   const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
+  const { isSSEConnected } = useSSE(fetchData);
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
@@ -25,11 +44,18 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('tasks');
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
     setIsDark(!hasLight);
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectFromUrl = params.get('project');
+    setSelectedProject(projectFromUrl || null);
+  }, [setSelectedProject]);
 
   useEffect(() => {
     try {
@@ -75,16 +101,39 @@ export default function Dashboard() {
 
   const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
 
+  const handleProjectChange = (value: string) => {
+    const nextProject = value || null;
+    setSelectedProject(nextProject);
+
+    const nextUrl = new URL(window.location.href);
+    if (nextProject) {
+      nextUrl.searchParams.set('project', nextProject);
+    } else {
+      nextUrl.searchParams.delete('project');
+    }
+
+    window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  };
+
+  const connectionDotColor = isSSEConnected ? 'var(--ok)' : isConnected ? '#f59e0b' : 'var(--danger)';
+  const connectionShadow = isSSEConnected
+    ? '0 0 8px rgba(34, 197, 94, 0.4)'
+    : isConnected
+      ? '0 0 8px rgba(245, 158, 11, 0.4)'
+      : '0 0 8px rgba(239, 68, 68, 0.4)';
+  const connectionLabel = isSSEConnected ? 'Real-time' : isConnected ? 'Polling' : 'Disconnected';
+
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <header
-        className="sticky top-0 z-50 border-b backdrop-blur-xl"
-        style={{
-          background: 'var(--chrome)',
-          borderColor: 'var(--border)',
-          height: 56,
-        }}
-      >
+    <AuthGuard>
+      <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+        <header
+          className="sticky top-0 z-50 border-b backdrop-blur-xl"
+          style={{
+            background: 'var(--chrome)',
+            borderColor: 'var(--border)',
+            height: 56,
+          }}
+        >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between">
             <div className="flex items-center gap-3">
@@ -115,15 +164,37 @@ export default function Dashboard() {
                 <span
                   className="h-2 w-2 rounded-full"
                   style={{
-                    background: isConnected ? 'var(--ok)' : 'var(--danger)',
-                    boxShadow: isConnected
-                      ? '0 0 8px rgba(34, 197, 94, 0.4)'
-                      : '0 0 8px rgba(239, 68, 68, 0.4)',
+                    background: connectionDotColor,
+                    boxShadow: connectionShadow,
                   }}
                 />
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
+                  {connectionLabel}
                 </span>
+              </div>
+
+              <div className="flex items-center">
+                <select
+                  value={selectedProject ?? ''}
+                  onChange={(event) => handleProjectChange(event.target.value)}
+                  className="rounded-md px-2.5 py-1.5 text-xs font-medium outline-none"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <option value="">All Projects</option>
+                  {projects.map((project) => (
+                    <option
+                      key={project.id}
+                      value={project.id}
+                      style={project.color ? { color: project.color } : undefined}
+                    >
+                      {project.color ? `● ${project.name}` : project.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center">
@@ -199,6 +270,31 @@ export default function Dashboard() {
                 Analytics
               </Link>
 
+              {user?.role === 'owner' ? (
+                <Link
+                  href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/settings`}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium tracking-wide transition-colors"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--bg-hover)';
+                    e.currentTarget.style.color = 'var(--text)';
+                    e.currentTarget.style.borderColor = 'var(--border-strong)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = 'var(--muted)';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  Settings
+                </Link>
+              ) : null}
+
               <button
                 onClick={togglePanel}
                 className="hidden md:flex rounded-lg p-2 transition-colors"
@@ -222,55 +318,99 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </header>
+        </header>
 
-      <main className="mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
-        <div className="flex flex-col md:flex-row gap-6">
+        <main className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
+          <div className="flex flex-col gap-6 md:flex-row">
           <div className="flex-1 min-w-0">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2
-                  className="text-lg font-semibold tracking-tight"
-                  style={{ color: 'var(--text-strong)' }}
-                >
-                  Task Board
-                </h2>
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  Drag tasks between columns to update status
-                </p>
-              </div>
-              <button
-                onClick={() => setNewTicketOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
-                style={{
-                  background: 'var(--accent)',
-                  color: '#fff',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-              >
-                <Plus className="h-4 w-4" />
-                New Ticket
-              </button>
+            <div className="flex items-center gap-1 mb-5 rounded-lg p-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+              {([
+                { key: 'tasks' as const, label: 'Task Board', icon: <LayoutList className="h-3.5 w-3.5" /> },
+                { key: 'agents' as const, label: 'Agents', icon: <Bot className="h-3.5 w-3.5" /> },
+                { key: 'linear' as const, label: 'Linear', icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+              ]).map((tab) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all"
+                    style={{
+                      background: isActive ? 'var(--card)' : 'transparent',
+                      color: isActive ? 'var(--text-strong)' : 'var(--muted)',
+                      boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
+                      borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) e.currentTarget.style.color = 'var(--text)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) e.currentTarget.style.color = 'var(--muted)';
+                    }}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
-            <NewTicketModal
-              open={newTicketOpen}
-              onClose={() => setNewTicketOpen(false)}
-              onCreated={() => fetchData()}
-            />
-            <CreateSprintModal
-              open={newSprintOpen}
-              onClose={() => setNewSprintOpen(false)}
-              onCreated={() => fetchData()}
-            />
-            {selectedSprint && <SprintHeader sprint={selectedSprint} />}
-            <KanbanBoard
-              todos={todos}
-              activeSprintId={activeSprint}
-              onStatusChange={handleStatusChange}
-              onSelectTodo={handleSelectTodo}
-              isLoading={isLoading}
-            />
+
+            {activeTab === 'tasks' && (
+              <>
+                <div className="mb-4 flex items-start justify-between">
+                  <div>
+                    <h2
+                      className="text-lg font-semibold tracking-tight"
+                      style={{ color: 'var(--text-strong)' }}
+                    >
+                      Task Board
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                      Drag tasks between columns to update status
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setNewTicketOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
+                    style={{
+                      background: 'var(--accent)',
+                      color: '#fff',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Ticket
+                  </button>
+                </div>
+                <NewTicketModal
+                  open={newTicketOpen}
+                  onClose={() => setNewTicketOpen(false)}
+                  onCreated={() => fetchData()}
+                />
+                <CreateSprintModal
+                  open={newSprintOpen}
+                  onClose={() => setNewSprintOpen(false)}
+                  onCreated={() => fetchData()}
+                />
+                {selectedSprint && <SprintHeader sprint={selectedSprint} />}
+                <KanbanBoard
+                  todos={todos}
+                  activeSprintId={activeSprint}
+                  onStatusChange={handleStatusChange}
+                  onSelectTodo={handleSelectTodo}
+                  isLoading={isLoading}
+                />
+              </>
+            )}
+
+            {activeTab === 'agents' && (
+              <AgentPanel onRefresh={fetchData} />
+            )}
+
+            {activeTab === 'linear' && (
+              <LinearBoard onRefresh={fetchData} />
+            )}
           </div>
 
           <div
@@ -322,14 +462,15 @@ export default function Dashboard() {
             />
           )}
         </div>
-      </main>
+        </main>
 
-      <TaskDetailModal
-        todo={selectedTodo}
-        open={selectedTodo !== null}
-        onClose={() => setSelectedTodo(null)}
-        onStatusChange={handleStatusChange}
-      />
-    </div>
+        <TaskDetailModal
+          todo={selectedTodo}
+          open={selectedTodo !== null}
+          onClose={() => setSelectedTodo(null)}
+          onStatusChange={handleStatusChange}
+        />
+      </div>
+    </AuthGuard>
   );
 }

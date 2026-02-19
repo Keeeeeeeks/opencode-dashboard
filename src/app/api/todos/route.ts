@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 const CreateTodoSchema = z.object({
   id: z.string().optional(),
@@ -179,6 +180,12 @@ export async function POST(request: NextRequest) {
       db.assignTodoToSprint(todo.id, data.sprint_id);
     }
 
+    eventBus.publish({
+      type: 'todo:updated',
+      payload: { todo },
+      timestamp: Date.now(),
+    });
+
     return NextResponse.json(
       { todo, auto_sprint_id: autoSprintId },
       {
@@ -261,6 +268,12 @@ export async function PUT(request: NextRequest) {
         results.push({ id: todoData.id, action: 'created' });
       }
     }
+
+    eventBus.publish({
+      type: 'todo:updated',
+      payload: { count: results.length },
+      timestamp: Date.now(),
+    });
 
     return NextResponse.json(
       { results },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 // Validation schema for events
 const EventSchema = z.object({
@@ -9,8 +10,6 @@ const EventSchema = z.object({
   payload: z.record(z.string(), z.any()),
   sessionId: z.string().optional(),
 });
-
-type Event = z.infer<typeof EventSchema>;
 
 /**
  * POST /api/events
@@ -73,6 +72,12 @@ export async function POST(request: NextRequest) {
         break;
       }
     }
+
+    eventBus.publish({
+      type: event.type === 'todo_update' ? 'todo:updated' : 'message:created',
+      payload: event.payload,
+      timestamp: Date.now(),
+    });
 
     return NextResponse.json(
       { success: true, event },
