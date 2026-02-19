@@ -149,6 +149,36 @@ export interface Project {
   created_at: number;
 }
 
+export interface Agent {
+  id: string;
+  name: string;
+  type: 'primary' | 'sub-agent';
+  parent_agent_id: string | null;
+  status: 'idle' | 'working' | 'blocked' | 'sleeping' | 'offline';
+  soul_md: string | null;
+  skills: string | null;
+  current_task_id: string | null;
+  created_at: number;
+  last_heartbeat: number | null;
+  config: string | null;
+}
+
+export interface AgentTask {
+  id: string;
+  agent_id: string;
+  linear_issue_id: string | null;
+  project_id: string | null;
+  title: string;
+  status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
+  priority: 'high' | 'medium' | 'low';
+  blocked_reason: string | null;
+  blocked_at: number | null;
+  started_at: number | null;
+  completed_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 /**
  * Database operations interface
  */
@@ -214,6 +244,18 @@ export interface DatabaseOperations {
   getAllProjects(): Project[];
   updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'created_at'>>): Project;
   deleteProject(id: string): boolean;
+
+  createAgent(agent: Omit<Agent, 'created_at'>): Agent;
+  getAgent(id: string): Agent | null;
+  getAllAgents(filters?: { status?: string; type?: string; parent_agent_id?: string }): Agent[];
+  updateAgent(id: string, updates: Partial<Omit<Agent, 'id' | 'created_at'>>): Agent;
+  deleteAgent(id: string): boolean;
+
+  createAgentTask(task: Omit<AgentTask, 'created_at' | 'updated_at'>): AgentTask;
+  getAgentTask(id: string): AgentTask | null;
+  getAgentTasks(agentId: string): AgentTask[];
+  updateAgentTask(id: string, updates: Partial<Omit<AgentTask, 'id' | 'agent_id' | 'created_at'>>): AgentTask;
+  deleteAgentTask(id: string): boolean;
 
   // Session operations
   createSession(session: Omit<Session, 'started_at'>): Session;
