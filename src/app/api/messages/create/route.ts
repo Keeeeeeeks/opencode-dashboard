@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 const CreateMessageSchema = z.object({
   type: z.enum(['task_complete', 'error', 'state_change', 'custom', 'worklog']),
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
       session_id: data.session_id ?? null,
       todo_id: data.todo_id ?? null,
       read: 0,
+    });
+
+    eventBus.publish({
+      type: 'message:created',
+      payload: { message },
+      timestamp: Date.now(),
     });
 
     return NextResponse.json({ success: true, message }, { status: 201, headers: corsHeaders(request) });

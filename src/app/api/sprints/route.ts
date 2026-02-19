@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import { eventBus } from '@/lib/events/eventBus';
 
 const CreateSprintSchema = z.object({
   name: z.string().min(1),
@@ -57,6 +58,12 @@ export async function POST(request: NextRequest) {
       end_date: data.end_date,
       goal: data.goal ?? null,
       status: data.status ?? 'planning',
+    });
+
+    eventBus.publish({
+      type: 'sprint:created',
+      payload: { sprint },
+      timestamp: Date.now(),
     });
 
     return NextResponse.json({ sprint }, { status: 201, headers: corsHeaders(request) });
