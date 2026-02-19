@@ -179,6 +179,47 @@ export interface AgentTask {
   updated_at: number;
 }
 
+export interface LinearProject {
+  id: string;
+  name: string;
+  description: string | null;
+  state: string | null;
+  progress: number;
+  start_date: string | null;
+  target_date: string | null;
+  url: string | null;
+  team_id: string | null;
+  team_name: string | null;
+  synced_at: number;
+}
+
+export interface LinearIssue {
+  id: string;
+  project_id: string | null;
+  identifier: string | null;
+  title: string;
+  description: string | null;
+  priority: number;
+  state_name: string | null;
+  state_type: string | null;
+  assignee_name: string | null;
+  assignee_avatar: string | null;
+  label_names: string | null;
+  estimate: number | null;
+  url: string | null;
+  agent_task_id: string | null;
+  synced_at: number;
+}
+
+export interface LinearWorkflowState {
+  id: string;
+  team_id: string;
+  name: string;
+  type: string;
+  color: string | null;
+  position: number | null;
+}
+
 /**
  * Database operations interface
  */
@@ -256,6 +297,22 @@ export interface DatabaseOperations {
   getAgentTasks(agentId: string): AgentTask[];
   updateAgentTask(id: string, updates: Partial<Omit<AgentTask, 'id' | 'agent_id' | 'created_at'>>): AgentTask;
   deleteAgentTask(id: string): boolean;
+
+  upsertLinearProject(project: LinearProject): LinearProject;
+  getLinearProject(id: string): LinearProject | null;
+  getAllLinearProjects(): LinearProject[];
+  deleteLinearProject(id: string): boolean;
+
+  upsertLinearIssue(issue: LinearIssue): LinearIssue;
+  getLinearIssue(id: string): LinearIssue | null;
+  getLinearIssuesByProject(projectId: string): LinearIssue[];
+  getAllLinearIssues(): LinearIssue[];
+  deleteLinearIssue(id: string): boolean;
+  linkAgentToIssue(issueId: string, agentTaskId: string | null): boolean;
+
+  upsertLinearWorkflowState(state: LinearWorkflowState): LinearWorkflowState;
+  getLinearWorkflowStates(teamId: string): LinearWorkflowState[];
+  getAllLinearWorkflowStates(): LinearWorkflowState[];
 
   // Session operations
   createSession(session: Omit<Session, 'started_at'>): Session;
