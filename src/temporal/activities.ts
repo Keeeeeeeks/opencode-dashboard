@@ -1,5 +1,7 @@
 import db from '@/lib/db';
+import { alertEngine } from '@/lib/alerts/engine';
 import { eventBus } from '@/lib/events/eventBus';
+import { lifecycleManager } from '@/lib/agents/lifecycle';
 import type { AgentTaskWorkflowInput, MonitorResult, NotificationPayload } from './types';
 
 export async function registerAgent(input: AgentTaskWorkflowInput): Promise<void> {
@@ -28,24 +30,28 @@ export async function registerAgent(input: AgentTaskWorkflowInput): Promise<void
 }
 
 export async function startAgentTask(input: AgentTaskWorkflowInput): Promise<void> {
-  const task = db.createAgentTask({
-    id: input.taskId,
-    agent_id: input.agentId,
-    linear_issue_id: input.linearIssueId || null,
-    project_id: input.projectId || null,
-    title: input.title,
-    status: 'in_progress',
-    priority: input.priority || 'medium',
-    blocked_reason: null,
-    blocked_at: null,
-    started_at: Math.floor(Date.now() / 1000),
-    completed_at: null,
-  });
+  const existingTask = db.getAgentTask(input.taskId);
+  const task =
+    existingTask && existingTask.agent_id === input.agentId
+      ? existingTask
+      : await lifecycleManager.assignTask({
+          agentId: input.agentId,
+          taskId: input.taskId,
+          linearIssueId: input.linearIssueId,
+          projectId: input.projectId,
+          title: input.title,
+          priority: input.priority || 'medium',
+        });
 
   db.updateAgent(input.agentId, {
     status: 'working',
     current_task_id: task.id,
     last_heartbeat: Math.floor(Date.now() / 1000),
+  });
+
+  db.updateAgentTask(task.id, {
+    status: 'in_progress',
+    started_at: Math.floor(Date.now() / 1000),
   });
 
   eventBus.publish({
@@ -61,7 +67,7 @@ export async function monitorAgent(agentId: string, taskId: string): Promise<Mon
     return { status: 'error', reason: 'Agent not found' };
   }
 
-  db.updateAgent(agentId, { last_heartbeat: Math.floor(Date.now() / 1000) });
+  lifecycleManager.refreshHeartbeat(agentId);
 
   const task = db.getAgentTask(taskId);
   if (!task) {
@@ -89,6 +95,21 @@ export async function updateDashboard(
   blockedReason?: string
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+
+  if (taskStatus === 'blocked') {
+    lifecycleManager.detectBlocked(agentId, {
+      source: 'explicit',
+      reason: blockedReason || 'Blocked by workflow monitor',
+      taskId,
+    });
+    return;
+  }
+
+  if (taskStatus === 'completed') {
+    lifecycleManager.completeTask(agentId, taskId);
+    return;
+  }
+
   const agentUpdates: Record<string, unknown> = { status: agentStatus, last_heartbeat: now };
 
   if (agentStatus === 'idle' || agentStatus === 'offline') {
@@ -98,11 +119,6 @@ export async function updateDashboard(
 
   if (taskStatus) {
     const taskUpdates: Record<string, unknown> = { status: taskStatus, updated_at: now };
-
-    if (taskStatus === 'blocked') {
-      taskUpdates.blocked_reason = blockedReason || null;
-      taskUpdates.blocked_at = now;
-    }
     if (taskStatus === 'completed' || taskStatus === 'cancelled') {
       taskUpdates.completed_at = now;
     }
@@ -122,37 +138,17 @@ export async function updateDashboard(
 }
 
 export async function sendNotification(payload: NotificationPayload): Promise<void> {
-  const content = buildNotificationMessage(payload);
-
-  db.createMessage({
-    type: payload.type === 'error' ? 'error' : payload.type === 'completed' ? 'task_complete' : 'state_change',
-    content,
-    todo_id: null,
-    session_id: null,
-    read: 0,
-    project_id: payload.projectId || null,
-  });
-
-  eventBus.publish({
-    type: 'message:created',
-    payload: { notification: payload },
-    timestamp: Date.now(),
+  alertEngine.processEvent({
+    trigger: payload.type,
+    agentId: payload.agentId,
+    taskId: payload.taskId,
+    title: payload.title,
+    priority: payload.priority || 'medium',
+    reason: payload.reason,
+    projectId: payload.projectId,
   });
 }
 
-function buildNotificationMessage(payload: NotificationPayload): string {
-  switch (payload.type) {
-    case 'blocked':
-      return `Agent "${payload.agentId}" blocked on "${payload.title}": ${payload.reason || 'Unknown reason'}`;
-    case 'completed':
-      return `Agent "${payload.agentId}" completed "${payload.title}"`;
-    case 'error':
-      return `Agent "${payload.agentId}" error on "${payload.title}": ${payload.reason || 'Unknown error'}`;
-    case 'stale_task':
-      return `Task "${payload.title}" has been blocked for over 2 hours (agent: ${payload.agentId})`;
-    case 'idle_too_long':
-      return `Agent "${payload.agentId}" has been idle for over 30 minutes`;
-    default:
-      return `Agent notification: ${payload.type}`;
-  }
+export async function cancelAlerts(agentId: string, taskId?: string): Promise<number> {
+  return alertEngine.cancelPendingAlerts(agentId, taskId);
 }

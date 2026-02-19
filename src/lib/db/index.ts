@@ -17,6 +17,7 @@ import type {
   Project,
   Agent,
   AgentTask,
+  AlertRule,
   LinearProject,
   LinearIssue,
   LinearWorkflowState,
@@ -166,6 +167,17 @@ function initializeDatabase(): Database.Database {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS alert_rules (
+      id TEXT PRIMARY KEY,
+      trigger TEXT NOT NULL,
+      priority_filter TEXT NOT NULL DEFAULT 'all',
+      delay_ms INTEGER NOT NULL DEFAULT 0,
+      channel TEXT NOT NULL DEFAULT 'in_app',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
     CREATE TABLE IF NOT EXISTS linear_projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -265,6 +277,7 @@ function initializeDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent_id ON agent_tasks(agent_id);
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_project_id ON agent_tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_alert_rules_trigger ON alert_rules(trigger);
     CREATE INDEX IF NOT EXISTS idx_linear_issues_project_id ON linear_issues(project_id);
     CREATE INDEX IF NOT EXISTS idx_linear_issues_state_type ON linear_issues(state_type);
     CREATE INDEX IF NOT EXISTS idx_linear_issues_agent_task_id ON linear_issues(agent_task_id);
@@ -313,12 +326,78 @@ function initializeDatabase(): Database.Database {
     db.exec('ALTER TABLE todo_comments ADD COLUMN project_id TEXT');
   }
 
+  const alertRuleColumns = db.prepare('PRAGMA table_info(alert_rules)').all() as Array<{ name: string }>;
+  if (alertRuleColumns.length === 0) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alert_rules (
+        id TEXT PRIMARY KEY,
+        trigger TEXT NOT NULL,
+        priority_filter TEXT NOT NULL DEFAULT 'all',
+        delay_ms INTEGER NOT NULL DEFAULT 0,
+        channel TEXT NOT NULL DEFAULT 'in_app',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      )
+    `);
+  } else {
+    if (!alertRuleColumns.some((c) => c.name === 'priority_filter')) {
+      db.exec("ALTER TABLE alert_rules ADD COLUMN priority_filter TEXT NOT NULL DEFAULT 'all'");
+    }
+    if (!alertRuleColumns.some((c) => c.name === 'delay_ms')) {
+      db.exec("ALTER TABLE alert_rules ADD COLUMN delay_ms INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!alertRuleColumns.some((c) => c.name === 'channel')) {
+      db.exec("ALTER TABLE alert_rules ADD COLUMN channel TEXT NOT NULL DEFAULT 'in_app'");
+    }
+    if (!alertRuleColumns.some((c) => c.name === 'enabled')) {
+      db.exec("ALTER TABLE alert_rules ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
+    }
+    if (!alertRuleColumns.some((c) => c.name === 'created_at')) {
+      db.exec('ALTER TABLE alert_rules ADD COLUMN created_at INTEGER NOT NULL DEFAULT (unixepoch())');
+    }
+    if (!alertRuleColumns.some((c) => c.name === 'updated_at')) {
+      db.exec('ALTER TABLE alert_rules ADD COLUMN updated_at INTEGER NOT NULL DEFAULT (unixepoch())');
+    }
+  }
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_sprints_project_id ON sprints(project_id);
+    CREATE INDEX IF NOT EXISTS idx_alert_rules_trigger ON alert_rules(trigger);
   `);
+
+  const alertRulesCountRow = db.prepare('SELECT COUNT(*) as count FROM alert_rules').get() as { count: number };
+  if ((alertRulesCountRow?.count ?? 0) === 0) {
+    const seedStmt = db.prepare(`
+      INSERT OR IGNORE INTO alert_rules (id, trigger, priority_filter, delay_ms, channel, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+    `);
+
+    const defaultRules: Array<[
+      string,
+      'blocked' | 'completed' | 'error' | 'idle_too_long' | 'stale_task',
+      'high' | 'medium' | 'low' | 'all',
+      number,
+      'push' | 'in_app' | 'both',
+      0 | 1,
+    ]> = [
+      ['blocked-high', 'blocked', 'high', 0, 'both', 1],
+      ['blocked-medium', 'blocked', 'medium', 600000, 'both', 1],
+      ['blocked-low', 'blocked', 'low', 3600000, 'in_app', 1],
+      ['error-all', 'error', 'all', 0, 'both', 1],
+      ['completed-high', 'completed', 'high', 0, 'in_app', 1],
+      ['completed-batch', 'completed', 'all', 900000, 'in_app', 1],
+      ['idle-all', 'idle_too_long', 'all', 1800000, 'in_app', 1],
+      ['stale-all', 'stale_task', 'all', 7200000, 'push', 1],
+    ];
+
+    for (const [id, trigger, priorityFilter, delayMs, channel, enabled] of defaultRules) {
+      seedStmt.run(id, trigger, priorityFilter, delayMs, channel, enabled);
+    }
+  }
 
   db.exec(`
     INSERT OR IGNORE INTO projects (id, name, created_at)
@@ -1681,6 +1760,83 @@ const db: DatabaseOperations = {
     return (result.changes ?? 0) > 0;
   },
 
+  createAlertRule(rule: Omit<AlertRule, 'created_at' | 'updated_at'>): AlertRule {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO alert_rules (id, trigger, priority_filter, delay_ms, channel, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(rule.id, rule.trigger, rule.priority_filter, rule.delay_ms, rule.channel, rule.enabled, now, now);
+
+    return {
+      ...rule,
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  getAlertRule(id: string): AlertRule | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM alert_rules WHERE id = ?');
+    return (stmt.get(id) as AlertRule) || null;
+  },
+
+  getAllAlertRules(): AlertRule[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM alert_rules ORDER BY trigger ASC, delay_ms ASC, id ASC');
+    return stmt.all() as AlertRule[];
+  },
+
+  updateAlertRule(id: string, updates: Partial<Omit<AlertRule, 'id' | 'created_at'>>): AlertRule {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const rule = db.getAlertRule(id);
+    if (!rule) {
+      throw new Error(`Alert rule with id ${id} not found`);
+    }
+
+    const updated: AlertRule = { ...rule, ...updates, updated_at: now };
+
+    const stmt = database.prepare(`
+      UPDATE alert_rules
+      SET trigger = ?, priority_filter = ?, delay_ms = ?, channel = ?, enabled = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(updated.trigger, updated.priority_filter, updated.delay_ms, updated.channel, updated.enabled, now, id);
+
+    return updated;
+  },
+
+  deleteAlertRule(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM alert_rules WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  getAlertRulesForTrigger(trigger: string, priority?: string): AlertRule[] {
+    const database = getDatabase();
+
+    if (priority) {
+      const stmt = database.prepare(`
+        SELECT *
+        FROM alert_rules
+        WHERE trigger = ?
+          AND (priority_filter = 'all' OR priority_filter = ?)
+        ORDER BY delay_ms ASC, id ASC
+      `);
+      return stmt.all(trigger, priority) as AlertRule[];
+    }
+
+    const stmt = database.prepare('SELECT * FROM alert_rules WHERE trigger = ? ORDER BY delay_ms ASC, id ASC');
+    return stmt.all(trigger) as AlertRule[];
+  },
+
   upsertLinearProject(project: LinearProject): LinearProject {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
@@ -1915,6 +2071,7 @@ export type {
   Project,
   Agent,
   AgentTask,
+  AlertRule,
   LinearProject,
   LinearIssue,
   LinearWorkflowState,

@@ -35,6 +35,47 @@ bun run build && bun run start
 
 ---
 
+## Authentication
+
+The dashboard has two independent auth layers:
+
+| Layer | Purpose | Controlled by |
+|-------|---------|---------------|
+| **API key** | Machine-to-machine (agents POST data) | `DASHBOARD_API_KEY` |
+| **Browser login** | Human users viewing the dashboard | GitHub OAuth or `DISABLE_AUTH` |
+
+### Option A: Disable browser auth (private networks)
+
+If the dashboard is only reachable over Tailscale, a home LAN, or localhost, you can skip the login screen entirely:
+
+```env
+DISABLE_AUTH=true
+```
+
+The dashboard will be open to anyone who can reach it on the network. API key auth for agents is unaffected — agents still need `Authorization: Bearer <key>` to POST data.
+
+### Option B: GitHub OAuth (recommended for shared access)
+
+If multiple people need access, or the dashboard is reachable from less-trusted networks, enable GitHub login:
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**
+2. Fill in:
+   - **Application name**: anything (e.g. `OpenCode Dashboard`)
+   - **Homepage URL**: your dashboard URL (e.g. `http://127.0.0.1:3000` or your Tailscale URL)
+   - **Authorization callback URL**: `<your-url>/api/auth/callback`
+     - Example: `https://my-machine.tail12345.ts.net/opencode/api/auth/callback`
+     - Local dev: `http://127.0.0.1:3000/api/auth/callback`
+3. Copy the **Client ID** and generate a **Client Secret**, then add them to `.env.local`:
+
+```env
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+```
+
+4. Start the dashboard and visit the login page. **The first person to sign in becomes the owner.** Everyone else gets a 403 until the owner invites them from Settings → Team.
+
+---
+
 ## What You Need to Make It Sing
 
 The dashboard provides the API and UI. Getting agents to automatically update the board requires a bit of wiring on your end.

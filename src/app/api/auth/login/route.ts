@@ -21,8 +21,9 @@ export async function GET(request: NextRequest) {
   }
 
   const state = randomBytes(32).toString('hex');
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:3000';
-  const callbackUrl = `${apiBase}/api/auth/callback`;
+  const basePath = process.env.BASE_PATH || '';
+  const origin = process.env.NEXT_PUBLIC_SITE_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+  const callbackUrl = `${origin}${basePath}/api/auth/callback`;
   const redirectPath = sanitizeRedirectPath(request.nextUrl.searchParams.get('redirect'));
 
   const authorizeUrl = new URL('https://github.com/login/oauth/authorize');

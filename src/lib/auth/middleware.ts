@@ -93,11 +93,17 @@ function getSessionAuthResult(token: string): AuthValidationResult {
   };
 }
 
+const AUTH_DISABLED = process.env.DISABLE_AUTH === 'true';
+
 export function validateAuth(request: NextRequest): AuthValidationResult {
   const path = request.nextUrl.pathname;
   const ip = extractClientIp(request);
   const authHeader = request.headers.get('authorization');
   const expectedToken = process.env.DASHBOARD_API_KEY;
+
+  if (AUTH_DISABLED && !authHeader) {
+    return { valid: true, authType: 'session', user: { id: 0, username: 'local', role: 'owner' } };
+  }
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const providedToken = authHeader.slice('Bearer '.length);

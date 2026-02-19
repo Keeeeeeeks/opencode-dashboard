@@ -3,6 +3,8 @@ import db from '@/lib/db';
 import { corsHeaders } from '@/lib/auth/middleware';
 import { hashToken, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 
+const AUTH_DISABLED = process.env.DISABLE_AUTH === 'true';
+
 function extractToken(request: NextRequest): string | null {
   const cookieToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (cookieToken) {
@@ -18,6 +20,16 @@ function extractToken(request: NextRequest): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  if (AUTH_DISABLED) {
+    return NextResponse.json(
+      {
+        valid: true,
+        user: { id: 0, username: 'local', display_name: 'Local User', avatar_url: null, role: 'owner' },
+      },
+      { status: 200, headers: corsHeaders(request) }
+    );
+  }
+
   const token = extractToken(request);
   if (!token) {
     return NextResponse.json({ valid: false }, { status: 200, headers: corsHeaders(request) });

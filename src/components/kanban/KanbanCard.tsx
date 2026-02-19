@@ -157,29 +157,31 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
                   : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
             )}
-            {todo.name ? (
-              <>
+            <div className="flex-1 min-w-0">
+              {todo.name ? (
+                <>
+                  <p
+                    className={cn('line-clamp-2 font-medium', isSubtask ? 'text-xs' : 'text-sm')}
+                    style={{ color: isSubtask ? 'var(--text)' : 'var(--text-strong)' }}
+                  >
+                    {todo.name}
+                  </p>
+                  <p
+                    className={cn('line-clamp-2 mt-0.5', isSubtask ? 'text-[10px]' : 'text-xs')}
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    {todo.content}
+                  </p>
+                </>
+              ) : (
                 <p
-                  className={cn('line-clamp-2 font-medium', isSubtask ? 'text-xs' : 'text-sm')}
-                  style={{ color: isSubtask ? 'var(--text)' : 'var(--text-strong)' }}
-                >
-                  {todo.name}
-                </p>
-                <p
-                  className={cn('line-clamp-2 mt-0.5', isSubtask ? 'text-[10px]' : 'text-xs')}
-                  style={{ color: 'var(--muted)' }}
+                  className={cn('line-clamp-3', isSubtask ? 'text-xs' : 'text-sm')}
+                  style={{ color: isSubtask ? 'var(--muted)' : 'var(--text)' }}
                 >
                   {todo.content}
                 </p>
-              </>
-            ) : (
-              <p
-                className={cn('line-clamp-3', isSubtask ? 'text-xs' : 'text-sm')}
-                style={{ color: isSubtask ? 'var(--muted)' : 'var(--text)' }}
-              >
-                {todo.content}
-              </p>
-            )}
+              )}
+            </div>
           </div>
           
           <div className={cn('flex flex-wrap items-center gap-2', isSubtask ? 'mt-1.5' : 'mt-2')}>

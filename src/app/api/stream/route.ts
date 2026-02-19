@@ -37,9 +37,11 @@ function sseMessage(event: string, data: Record<string, unknown>): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+const AUTH_DISABLED = process.env.DISABLE_AUTH === 'true';
+
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token');
-  if (!token || !validateQueryToken(token)) {
+  if (!AUTH_DISABLED && (!token || !validateQueryToken(token))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders(request) });
   }
 

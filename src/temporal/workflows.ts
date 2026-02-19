@@ -20,7 +20,7 @@ export const progressQuery = defineQuery<{ status: string; taskTitle: string; bl
 );
 
 export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<AgentTaskWorkflowResult> {
-  const { registerAgent, startAgentTask, monitorAgent, updateDashboard, sendNotification } =
+  const { registerAgent, startAgentTask, monitorAgent, updateDashboard, sendNotification, cancelAlerts } =
     proxyActivities<typeof activities>({
       startToCloseTimeout: '10 minutes',
       retry: { maximumAttempts: 3 },
@@ -78,13 +78,6 @@ export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<
     if (result.status === 'completed') {
       currentStatus = 'completed';
       await updateDashboard(input.agentId, 'idle', input.taskId, 'completed');
-      await sendNotification({
-        type: 'completed',
-        agentId: input.agentId,
-        taskId: input.taskId,
-        title: input.title,
-        priority: input.priority,
-      });
       return { status: 'completed', agentId: input.agentId, taskId: input.taskId };
     }
 
@@ -94,14 +87,6 @@ export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<
       currentStatus = 'blocked';
 
       await updateDashboard(input.agentId, 'blocked', input.taskId, 'blocked', result.reason);
-      await sendNotification({
-        type: 'blocked',
-        agentId: input.agentId,
-        taskId: input.taskId,
-        title: input.title,
-        priority: input.priority,
-        reason: result.reason,
-      });
 
       const unblockedInTime = await condition(() => !isBlocked, '2h');
       if (!unblockedInTime) {
@@ -118,6 +103,7 @@ export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<
         continue;
       }
 
+      await cancelAlerts(input.agentId, input.taskId);
       await updateDashboard(input.agentId, 'working', input.taskId, 'in_progress');
       currentStatus = 'working';
     }

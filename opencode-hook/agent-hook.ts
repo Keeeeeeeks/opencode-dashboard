@@ -39,6 +39,31 @@ async function patchJson(path: string, body: Record<string, unknown>) {
 export const agentHook = {
   name: 'agent-hook',
 
+  sendHeartbeat: async (agentId: string) => {
+    await postJson(`/api/agents/${encodeURIComponent(agentId)}/heartbeat`, {});
+  },
+
+  reportError: async (agentId: string, taskId: string) => {
+    await postJson(`/api/agents/${encodeURIComponent(agentId)}/error`, { taskId });
+  },
+
+  reportBlock: async (
+    agentId: string,
+    taskId: string,
+    source: 'explicit' | 'question' | 'repeated_errors' | 'idle' | 'resource_denied',
+    reason: string
+  ) => {
+    await postJson(`/api/agents/${encodeURIComponent(agentId)}/block`, {
+      taskId,
+      source,
+      reason,
+    });
+  },
+
+  completeTask: async (agentId: string, taskId: string) => {
+    await postJson(`/api/agents/${encodeURIComponent(agentId)}/complete`, { taskId });
+  },
+
   onAgentSpawn: async (agent: {
     id: string;
     name: string;
@@ -83,9 +108,7 @@ export const agentHook = {
   onHeartbeat: async (agentId: string, progress?: Record<string, unknown>) => {
     try {
       void progress;
-      await patchJson(`/api/agents/${encodeURIComponent(agentId)}`, {
-        last_heartbeat: Math.floor(Date.now() / 1000),
-      });
+      await agentHook.sendHeartbeat(agentId);
     } catch (error) {
       console.error('[Agent Hook] Error updating heartbeat:', error);
     }
@@ -97,6 +120,11 @@ export const agentHook = {
     result?: { status: 'completed' | 'cancelled'; reason?: string }
   ) => {
     try {
+      if (result?.status !== 'cancelled') {
+        await agentHook.completeTask(agentId, taskId);
+        return;
+      }
+
       await patchJson(
         `/api/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`,
         {
@@ -111,10 +139,7 @@ export const agentHook = {
 
   onTaskBlocked: async (agentId: string, taskId: string, reason: string) => {
     try {
-      await patchJson(`/api/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`, {
-        status: 'blocked',
-        blocked_reason: reason,
-      });
+      await agentHook.reportBlock(agentId, taskId, 'explicit', reason);
     } catch (error) {
       console.error('[Agent Hook] Error marking task blocked:', error);
     }
