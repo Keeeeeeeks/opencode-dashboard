@@ -90,7 +90,7 @@ export default function LoginPage() {
         </div>
 
         <a
-          href={`${API_BASE}/api/auth/login?redirect=/`}
+          href={`${API_BASE}/api/auth/login?redirect=${API_BASE}/`}
           className="flex w-full items-center justify-center rounded-lg px-4 py-3 text-sm font-semibold transition-opacity"
           style={{
             background: 'var(--accent)',

@@ -109,7 +109,7 @@ export default function V2DashboardPage() {
 
             <div className="flex items-center gap-3">
               <Link
-                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/`}
+                href="/"
                 className="rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors"
                 style={{
                   background: 'var(--bg-hover)',

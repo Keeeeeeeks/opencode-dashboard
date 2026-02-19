@@ -249,7 +249,7 @@ export default function Dashboard() {
               </button>
 
               <Link
-                href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/analytics`}
+                href="/analytics"
                 className="rounded-lg px-3 py-1.5 text-xs font-medium tracking-wide transition-colors"
                 style={{
                   background: 'transparent',
@@ -272,7 +272,7 @@ export default function Dashboard() {
 
               {user?.role === 'owner' ? (
                 <Link
-                  href={`${process.env.NEXT_PUBLIC_API_BASE || ''}/settings`}
+                  href="/settings"
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium tracking-wide transition-colors"
                   style={{
                     background: 'transparent',

@@ -69,7 +69,7 @@ export default function InviteLandingPage() {
   }, [inviteId]);
 
   const authUrl = useMemo(
-    () => `${API_BASE}/api/auth/login?redirect=${encodeURIComponent(`/invite/${inviteId}/accept`)}`,
+    () => `${API_BASE}/api/auth/login?redirect=${encodeURIComponent(`${API_BASE}/invite/${inviteId}/accept`)}`,
     [inviteId]
   );
 
