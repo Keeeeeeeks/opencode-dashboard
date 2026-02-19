@@ -33,8 +33,11 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
   const parentTodos = todos.filter((t) => !t.parent_id);
   const orphanChildren = todos.filter((t) => {
     if (!t.parent_id) return false;
-    const parentInThisColumn = parentTodos.some((p) => p.id === t.parent_id);
-    return !parentInThisColumn;
+    // Hide children whose parent exists anywhere (they render nested under the parent)
+    const parentOwnsChildren = childTodosMap.has(t.parent_id);
+    if (parentOwnsChildren) return false;
+    // Show children whose parent doesn't exist at all (truly orphaned)
+    return true;
   });
 
   const allSortableIds = todos.map((t) => t.id);
@@ -104,9 +107,6 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
             ) : (
               <>
                 {parentTodos.map((todo) => {
-                  const childrenInColumn = (childTodosMap.get(todo.id) || []).filter(
-                    (c) => c.status === status
-                  );
                   const allChildren = childTodosMap.get(todo.id) || [];
                   const isExpanded = expandedParents.has(todo.id);
 
@@ -120,12 +120,12 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
                         onStatusChange={onStatusChange}
                         onSelectTodo={onSelectTodo}
                       />
-                      {isExpanded && childrenInColumn.length > 0 && (
+                      {isExpanded && allChildren.length > 0 && (
                         <div
                           className="ml-6 mt-1 space-y-1.5 pl-3"
                           style={{ borderLeft: '2px solid var(--border)' }}
                         >
-                          {childrenInColumn.map((child) => (
+                          {allChildren.map((child) => (
                             <KanbanCard
                               key={child.id}
                               todo={child}
