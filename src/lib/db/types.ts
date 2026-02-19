@@ -4,6 +4,7 @@
 
 export interface Todo {
   id: string;
+  name: string | null;
   session_id: string | null;
   content: string;
   status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'cancelled' | 'icebox';
@@ -31,6 +32,7 @@ export interface Message {
   content: string; // encrypted in database, decrypted when retrieved
   todo_id: string | null;
   session_id: string | null;
+  project_id?: string | null;
   read: 0 | 1;
   created_at: number;
 }
@@ -40,6 +42,7 @@ export interface Session {
   name: string | null;
   started_at: number;
   ended_at: number | null;
+  project_id?: string | null;
 }
 
 export interface Setting {
@@ -60,6 +63,7 @@ export interface Task {
   complexity_score: number | null;
   assigned_agent_id: string | null;
   linear_issue_id: string | null;
+  project_id?: string | null;
   /** Distinguishes v1 legacy todos from native v2 tasks */
   source?: 'v1' | 'v2';
   /** Original V1 todo string ID (only present when source === 'v1') */
@@ -84,6 +88,7 @@ export interface TodoComment {
   todo_id: string;
   body: string;
   author: string;
+  project_id?: string | null;
   created_at: number;
 }
 
@@ -94,6 +99,7 @@ export interface Sprint {
   end_date: number;
   goal: string | null;
   status: 'planning' | 'active' | 'completed';
+  project_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -104,6 +110,43 @@ export interface SprintVelocity {
   total_points: number;
   completed_points: number;
   daily_progress: Array<{ date: string; completed: number; remaining: number }>;
+}
+
+export interface User {
+  id: number;
+  github_id: number;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: 'owner' | 'admin' | 'viewer';
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AuthSession {
+  id: string;
+  user_id: number;
+  token_hash: string;
+  expires_at: number;
+  created_at: number;
+}
+
+export interface InviteLink {
+  id: string;
+  created_by: number;
+  role: 'admin' | 'viewer';
+  expires_at: number;
+  used_by: number | null;
+  used_at: number | null;
+  created_at: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  created_at: number;
 }
 
 /**
@@ -147,6 +190,30 @@ export interface DatabaseOperations {
   getMessages(filters?: { todo_id?: string; session_id?: string; read?: boolean }): Message[];
   markMessageAsRead(id: number): boolean;
   deleteMessage(id: number): boolean;
+
+  createUser(user: Omit<User, 'id' | 'created_at' | 'updated_at'>): User;
+  getUserById(id: number): User | null;
+  getUserByGithubId(githubId: number): User | null;
+  getAllUsers(): User[];
+  updateUser(id: number, updates: Partial<Omit<User, 'id' | 'created_at'>>): User;
+  deleteUser(id: number): boolean;
+  getUserCount(): number;
+
+  createAuthSession(session: Omit<AuthSession, 'created_at'>): AuthSession;
+  getAuthSessionByTokenHash(tokenHash: string): AuthSession | null;
+  deleteAuthSession(id: string): boolean;
+  deleteUserSessions(userId: number): number;
+  cleanExpiredSessions(): number;
+
+  createInviteLink(link: Omit<InviteLink, 'used_by' | 'used_at' | 'created_at'>): InviteLink;
+  getInviteLink(id: string): InviteLink | null;
+  markInviteLinkUsed(id: string, usedBy: number): boolean;
+
+  createProject(project: Omit<Project, 'created_at'>): Project;
+  getProject(id: string): Project | null;
+  getAllProjects(): Project[];
+  updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'created_at'>>): Project;
+  deleteProject(id: string): boolean;
 
   // Session operations
   createSession(session: Omit<Session, 'started_at'>): Session;

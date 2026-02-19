@@ -11,6 +11,7 @@ type SeedTodoInput = {
 function createTodo(input: SeedTodoInput) {
   return db.createTodo({
     id: input.id,
+    name: null,
     content: input.content,
     status: input.status,
     priority: input.priority,

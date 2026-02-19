@@ -26,7 +26,7 @@ const statusLabels: Record<Todo['status'], string> = {
   icebox: 'Icebox',
 };
 
-export function KanbanColumn({ title, status, todos, onStatusChange, childTodosMap, expandedParents, onToggleExpand }: KanbanColumnProps) {
+export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTodo, childTodosMap, expandedParents, onToggleExpand }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const [collapsed, setCollapsed] = useState(false);
 
@@ -118,6 +118,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, childTodosM
                         isExpanded={isExpanded}
                         onToggleExpand={() => onToggleExpand(todo.id)}
                         onStatusChange={onStatusChange}
+                        onSelectTodo={onSelectTodo}
                       />
                       {isExpanded && childrenInColumn.length > 0 && (
                         <div
@@ -130,6 +131,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, childTodosM
                               todo={child}
                               isSubtask
                               onStatusChange={onStatusChange}
+                              onSelectTodo={onSelectTodo}
                             />
                           ))}
                         </div>
@@ -138,7 +140,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, childTodosM
                   );
                 })}
                 {orphanChildren.map((todo) => (
-                  <KanbanCard key={todo.id} todo={todo} isSubtask onStatusChange={onStatusChange} />
+                  <KanbanCard key={todo.id} todo={todo} isSubtask onStatusChange={onStatusChange} onSelectTodo={onSelectTodo} />
                 ))}
               </>
             )}

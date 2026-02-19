@@ -11,6 +11,10 @@ import type {
   TodoComment,
   Sprint,
   SprintVelocity,
+  User,
+  AuthSession,
+  InviteLink,
+  Project,
   StatusHistoryEntry,
   DatabaseOperations,
 } from './types';
@@ -42,6 +46,7 @@ function initializeDatabase(): Database.Database {
       content TEXT NOT NULL,
       todo_id TEXT,
       session_id TEXT,
+      project_id TEXT,
       read INTEGER DEFAULT 0,
       created_at INTEGER DEFAULT (unixepoch())
     );
@@ -50,7 +55,45 @@ function initializeDatabase(): Database.Database {
       id TEXT PRIMARY KEY,
       name TEXT,
       started_at INTEGER DEFAULT (unixepoch()),
-      ended_at INTEGER
+      ended_at INTEGER,
+      project_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      github_id INTEGER UNIQUE NOT NULL,
+      username TEXT NOT NULL,
+      display_name TEXT,
+      avatar_url TEXT,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      token_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS invite_links (
+      id TEXT PRIMARY KEY,
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      role TEXT NOT NULL DEFAULT 'viewer',
+      expires_at INTEGER NOT NULL,
+      used_by INTEGER REFERENCES users(id),
+      used_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -71,6 +114,7 @@ function initializeDatabase(): Database.Database {
       complexity_score REAL,
       assigned_agent_id TEXT,
       linear_issue_id TEXT,
+      project_id TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
       updated_at INTEGER DEFAULT (unixepoch())
     );
@@ -92,6 +136,7 @@ function initializeDatabase(): Database.Database {
       todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
       body TEXT NOT NULL,
       author TEXT NOT NULL DEFAULT 'anonymous',
+      project_id TEXT,
       created_at INTEGER DEFAULT (unixepoch())
     );
 
@@ -102,6 +147,7 @@ function initializeDatabase(): Database.Database {
       end_date INTEGER NOT NULL,
       goal TEXT,
       status TEXT DEFAULT 'planning',
+      project_id TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
       updated_at INTEGER DEFAULT (unixepoch())
     );
@@ -133,6 +179,10 @@ function initializeDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_todo_sprints_todo_id ON todo_sprints(todo_id);
     CREATE INDEX IF NOT EXISTS idx_todo_status_history_todo_id ON todo_status_history(todo_id);
     CREATE INDEX IF NOT EXISTS idx_todo_status_history_changed_at ON todo_status_history(changed_at);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON auth_sessions(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_invite_links_created_by ON invite_links(created_by);
   `);
 
   // Migration: add project column to todos if not present
@@ -148,6 +198,48 @@ function initializeDatabase(): Database.Database {
     db.exec('ALTER TABLE todos ADD COLUMN completed_at INTEGER');
     db.exec("UPDATE todos SET completed_at = updated_at WHERE status = 'completed' AND completed_at IS NULL");
   }
+  if (!columns.some((c) => c.name === 'name')) {
+    db.exec('ALTER TABLE todos ADD COLUMN name TEXT');
+  }
+
+  const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+  if (!messageColumns.some((c) => c.name === 'project_id')) {
+    db.exec('ALTER TABLE messages ADD COLUMN project_id TEXT');
+  }
+
+  const sessionColumns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+  if (!sessionColumns.some((c) => c.name === 'project_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN project_id TEXT');
+  }
+
+  const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>;
+  if (!taskColumns.some((c) => c.name === 'project_id')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN project_id TEXT');
+  }
+
+  const sprintColumns = db.prepare('PRAGMA table_info(sprints)').all() as Array<{ name: string }>;
+  if (!sprintColumns.some((c) => c.name === 'project_id')) {
+    db.exec('ALTER TABLE sprints ADD COLUMN project_id TEXT');
+  }
+
+  const todoCommentColumns = db.prepare('PRAGMA table_info(todo_comments)').all() as Array<{ name: string }>;
+  if (!todoCommentColumns.some((c) => c.name === 'project_id')) {
+    db.exec('ALTER TABLE todo_comments ADD COLUMN project_id TEXT');
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_project_id ON messages(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sprints_project_id ON sprints(project_id);
+  `);
+
+  db.exec(`
+    INSERT OR IGNORE INTO projects (id, name, created_at)
+    SELECT DISTINCT project, project, unixepoch()
+    FROM todos
+    WHERE project IS NOT NULL AND project != '';
+  `);
 
   return db;
 }
@@ -178,14 +270,15 @@ const db: DatabaseOperations = {
     }
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const completedAt = todo.status === 'completed' ? now : null;
 
     stmt.run(
       todo.id,
+      todo.name ?? null,
       todo.session_id,
       todo.content,
       todo.status,
@@ -317,11 +410,12 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
+      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
       WHERE id = ?
     `);
 
     stmt.run(
+      updated.name ?? null,
       updated.session_id,
       updated.content,
       updated.status,
@@ -387,11 +481,11 @@ const db: DatabaseOperations = {
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO todo_comments (todo_id, body, author, created_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO todo_comments (todo_id, body, author, project_id, created_at)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(comment.todo_id, comment.body, comment.author, now);
+    const result = stmt.run(comment.todo_id, comment.body, comment.author, comment.project_id ?? null, now);
 
     return {
       ...comment,
@@ -432,11 +526,21 @@ const db: DatabaseOperations = {
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO sprints (id, name, start_date, end_date, goal, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sprints (id, name, start_date, end_date, goal, status, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(sprint.id, sprint.name, sprint.start_date, sprint.end_date, sprint.goal, sprint.status, now, now);
+    stmt.run(
+      sprint.id,
+      sprint.name,
+      sprint.start_date,
+      sprint.end_date,
+      sprint.goal,
+      sprint.status,
+      sprint.project_id ?? null,
+      now,
+      now
+    );
 
     return {
       ...sprint,
@@ -470,11 +574,11 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE sprints
-      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, updated_at = ?
+      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, project_id = ?, updated_at = ?
       WHERE id = ?
     `);
 
-    stmt.run(updated.name, updated.start_date, updated.end_date, updated.goal, updated.status, now, id);
+    stmt.run(updated.name, updated.start_date, updated.end_date, updated.goal, updated.status, updated.project_id ?? null, now, id);
 
     return updated;
   },
@@ -624,8 +728,8 @@ const db: DatabaseOperations = {
     const encryptedContent = encrypt(message.content);
 
     const stmt = database.prepare(`
-      INSERT INTO messages (type, content, todo_id, session_id, read, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (type, content, todo_id, session_id, project_id, read, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -633,6 +737,7 @@ const db: DatabaseOperations = {
       encryptedContent,
       message.todo_id,
       message.session_id,
+      message.project_id ?? null,
       message.read,
       now
     );
@@ -710,16 +815,224 @@ const db: DatabaseOperations = {
     return (result.changes ?? 0) > 0;
   },
 
+  createUser(user: Omit<User, 'id' | 'created_at' | 'updated_at'>): User {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO users (github_id, username, display_name, avatar_url, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(user.github_id, user.username, user.display_name, user.avatar_url, user.role, now, now);
+
+    return {
+      ...user,
+      id: Number(result.lastInsertRowid),
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  getUserById(id: number): User | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM users WHERE id = ?');
+    return (stmt.get(id) as User) || null;
+  },
+
+  getUserByGithubId(githubId: number): User | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM users WHERE github_id = ?');
+    return (stmt.get(githubId) as User) || null;
+  },
+
+  getAllUsers(): User[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM users ORDER BY created_at DESC, id DESC');
+    return stmt.all() as User[];
+  },
+
+  updateUser(id: number, updates: Partial<Omit<User, 'id' | 'created_at'>>): User {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const user = db.getUserById(id);
+    if (!user) {
+      throw new Error(`User with id ${id} not found`);
+    }
+
+    const updated: User = { ...user, ...updates, updated_at: now };
+
+    const stmt = database.prepare(`
+      UPDATE users
+      SET github_id = ?, username = ?, display_name = ?, avatar_url = ?, role = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(updated.github_id, updated.username, updated.display_name, updated.avatar_url, updated.role, now, id);
+
+    return updated;
+  },
+
+  deleteUser(id: number): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM users WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  getUserCount(): number {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT COUNT(*) as count FROM users');
+    const row = stmt.get() as { count: number } | undefined;
+    return row?.count ?? 0;
+  },
+
+  createAuthSession(session: Omit<AuthSession, 'created_at'>): AuthSession {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO auth_sessions (id, user_id, token_hash, expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(session.id, session.user_id, session.token_hash, session.expires_at, now);
+
+    return {
+      ...session,
+      created_at: now,
+    };
+  },
+
+  getAuthSessionByTokenHash(tokenHash: string): AuthSession | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM auth_sessions WHERE token_hash = ?');
+    return (stmt.get(tokenHash) as AuthSession) || null;
+  },
+
+  deleteAuthSession(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM auth_sessions WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  deleteUserSessions(userId: number): number {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM auth_sessions WHERE user_id = ?');
+    const result = stmt.run(userId);
+    return result.changes ?? 0;
+  },
+
+  cleanExpiredSessions(): number {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?');
+    const result = stmt.run(now);
+    return result.changes ?? 0;
+  },
+
+  createInviteLink(link: Omit<InviteLink, 'used_by' | 'used_at' | 'created_at'>): InviteLink {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO invite_links (id, created_by, role, expires_at, used_by, used_at, created_at)
+      VALUES (?, ?, ?, ?, NULL, NULL, ?)
+    `);
+
+    stmt.run(link.id, link.created_by, link.role, link.expires_at, now);
+
+    return {
+      ...link,
+      used_by: null,
+      used_at: null,
+      created_at: now,
+    };
+  },
+
+  getInviteLink(id: string): InviteLink | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM invite_links WHERE id = ?');
+    return (stmt.get(id) as InviteLink) || null;
+  },
+
+  markInviteLinkUsed(id: string, usedBy: number): boolean {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare('UPDATE invite_links SET used_by = ?, used_at = ? WHERE id = ? AND used_by IS NULL');
+    const result = stmt.run(usedBy, now, id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  createProject(project: Omit<Project, 'created_at'>): Project {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+
+    const stmt = database.prepare(`
+      INSERT INTO projects (id, name, description, color, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(project.id, project.name, project.description, project.color, now);
+
+    return {
+      ...project,
+      created_at: now,
+    };
+  },
+
+  getProject(id: string): Project | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM projects WHERE id = ?');
+    return (stmt.get(id) as Project) || null;
+  },
+
+  getAllProjects(): Project[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM projects ORDER BY created_at DESC, id DESC');
+    return stmt.all() as Project[];
+  },
+
+  updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'created_at'>>): Project {
+    const database = getDatabase();
+
+    const project = db.getProject(id);
+    if (!project) {
+      throw new Error(`Project with id ${id} not found`);
+    }
+
+    const updated: Project = { ...project, ...updates };
+
+    const stmt = database.prepare(`
+      UPDATE projects
+      SET name = ?, description = ?, color = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(updated.name, updated.description, updated.color, id);
+
+    return updated;
+  },
+
+  deleteProject(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM projects WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
   createSession(session: Omit<Session, 'started_at'>): Session {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO sessions (id, name, started_at, ended_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO sessions (id, name, started_at, ended_at, project_id)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
-    stmt.run(session.id, session.name, now, session.ended_at);
+    stmt.run(session.id, session.name, now, session.ended_at, session.project_id ?? null);
 
     return {
       ...session,
@@ -803,10 +1116,11 @@ const db: DatabaseOperations = {
         complexity_score,
         assigned_agent_id,
         linear_issue_id,
+        project_id,
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -821,6 +1135,7 @@ const db: DatabaseOperations = {
       task.complexity_score,
       task.assigned_agent_id,
       task.linear_issue_id,
+      task.project_id ?? null,
       now,
       now
     );
@@ -875,6 +1190,7 @@ const db: DatabaseOperations = {
         complexity_score = ?,
         assigned_agent_id = ?,
         linear_issue_id = ?,
+        project_id = ?,
         updated_at = ?
       WHERE id = ?
     `);
@@ -891,6 +1207,7 @@ const db: DatabaseOperations = {
       updated.complexity_score,
       updated.assigned_agent_id,
       updated.linear_issue_id,
+      updated.project_id ?? null,
       now,
       id
     );
@@ -1066,6 +1383,10 @@ export type {
   TodoComment,
   Sprint,
   SprintVelocity,
+  User,
+  AuthSession,
+  InviteLink,
+  Project,
   StatusHistoryEntry,
   DatabaseOperations,
 };

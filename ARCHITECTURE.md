@@ -40,25 +40,25 @@
                              │  │  + linear_cache (projects, issues, states)        │   │
                              │  └──────────────────────────────────────────────────┘   │
                              │         │                                  │            │
-                             │         │ SSE/WebSocket                    │ GraphQL    │
-                             │         │ (replaces polling)               │            │
-                             └─────────│──────────────────────────────────│────────────┘
-                                       │                                  │
-                ┌──────────────────────▼─────┐                  ┌────────▼──────────┐
-                │     MOBILE APP (Expo)       │                  │   Linear API       │
-                │                             │                  │   api.linear.app   │
-                │  Auth: GitHub OAuth          │                  │                    │
-                │  Lock: FaceID/biometric     │                  │  - OAuth2 tokens   │
-                │                             │                  │  - GraphQL queries │
-                │  ┌─────────┐ ┌──────────┐  │                  │  - Webhooks ──────>│
-                │  │ Agents  │ │ Projects │  │                  │    (Issue, Project  │
-                │  │  view   │ │   view   │  │                  │     Comment, Cycle) │
-                │  └─────────┘ └──────────┘  │                  └───────────────────┘
-                │                             │
-                │  Secure token storage:      │         ┌──────────────────────────┐
-                │  expo-secure-store           │         │  SSH Tunnel / Tailscale   │
-                │                             │◄────────│  (laptop → mac mini)      │
-                └─────────────────────────────┘         └──────────────────────────┘
+                              │         │ SSE/WebSocket                    │ GraphQL    │
+                              │         │ (replaces polling)               │            │
+                              └─────────│──────────────────────────────────│────────────┘
+                                        │                                  │
+                 ┌──────────────────────▼─────┐                  ┌────────▼──────────┐
+                 │     WEB CLIENTS (Browsers)  │                  │   Linear API       │
+                 │  (via SSH Tunnel/Tailscale) │                  │   api.linear.app   │
+                 │                             │                  │                    │
+                 │  - Real-time updates        │                  │  - OAuth2 tokens   │
+                 │  - Agent monitoring         │                  │  - GraphQL queries │
+                 │  - Project kanban           │                  │  - Webhooks ──────>│
+                 │                             │                  │    (Issue, Project  │
+                 │                             │                  │     Comment, Cycle) │
+                 │                             │                  └───────────────────┘
+                 │                             │
+                 │         ┌──────────────────────────────┐
+                 │         │  SSH Tunnel / Tailscale       │
+                 │◄────────│  (laptop → mac mini)          │
+                 └─────────┴──────────────────────────────┘
 ```
 
 ---
@@ -66,26 +66,26 @@
 ## Data Flow: Linear Integration
 
 ```
-  Linear Workspace                 Dashboard Backend               Mobile App
-  ═══════════════                  ═════════════════               ══════════
-                                                                
-  Issue created ──webhook POST──> /api/linear/webhook             
-                                   │                              
-                                   ├─ verify signature            
-                                   │  (LINEAR_WEBHOOK_SECRET)     
-                                   │                              
-                                   ├─ upsert to linear_cache      
-                                   │  table in SQLite             
-                                   │                              
-                                   └─ push SSE event ──────────> real-time update
-                                                                  (no polling)
-                                                                
-  ◄──── GraphQL mutation ────────  /api/linear/sync               
-    (issue.update stateId)         (card drag-and-drop)  ◄─────  user drags card
-                                                                
-  ◄──── GraphQL query ───────────  /api/projects                  
-    (full project sync)            (periodic background           
-                                    sync every 60s)              
+   Linear Workspace                 Dashboard Backend
+   ═══════════════                  ═════════════════
+                                                                 
+   Issue created ──webhook POST──> /api/linear/webhook             
+                                    │                              
+                                    ├─ verify signature            
+                                    │  (LINEAR_WEBHOOK_SECRET)     
+                                    │                              
+                                    ├─ upsert to linear_cache      
+                                    │  table in SQLite             
+                                    │                              
+                                    └─ push SSE event ──────────> real-time update
+                                                                   (to web clients)
+                                                                 
+   ◄──── GraphQL mutation ────────  /api/linear/sync               
+     (issue.update stateId)         (card drag-and-drop)           
+                                                                 
+   ◄──── GraphQL query ───────────  /api/projects                  
+     (full project sync)            (periodic background           
+                                     sync every 60s)              
 ```
 
 ### Webhook Events to Subscribe
@@ -151,50 +151,13 @@ await linear.updateIssue("issue-id", { stateId: "new-state-id" });
                                  │   └─ if completed:          
                                  │      → signal: DONE         
                                  │                             
-                                 ├─ on BLOCKED signal:         
-                                 │   wait for human unblock    ◄── user taps "Unblock"
-                                 │   (workflow.signal)                on mobile
+                                  ├─ on BLOCKED signal:         
+                                  │   wait for human unblock    ◄── user clicks "Unblock"
+                                  │   (workflow.signal)                in dashboard
                                  │                             
                                  └─ on DONE / CANCELLED:       
                                     update agent status        
                                     in DB                       
-```
-
----
-
-## Auth Flow
-
-```
-  Mobile App                    Dashboard Backend              GitHub OAuth
-  ══════════                    ═════════════════              ════════════
-                                                              
-  1. User opens app                                            
-     │                                                         
-  2. Check expo-secure-store                                   
-     for existing token                                        
-     │                                                         
-     ├─ token exists:                                          
-     │  prompt FaceID ──────> expo-local-authentication         
-     │  │                     authenticateAsync()               
-     │  ├─ success: load app                                   
-     │  └─ fail: show PIN fallback                             
-     │                                                         
-     └─ no token:                                              
-        show GitHub login ──> expo-auth-session                
-                               │                               
-                               ├─ redirect to GitHub ─────────> /login/oauth/authorize
-                               │                               
-                               ◄─ callback with code  ◄────── redirect with ?code=
-                               │                               
-                               ├─ exchange code for token ────> /login/oauth/access_token
-                               │                               
-                               ├─ store token in               
-                               │  expo-secure-store             
-                               │                               
-                               ├─ send token to backend         
-                               │  for session creation          
-                               │                               
-                               └─ load app                     
 ```
 
 ---
@@ -237,7 +200,7 @@ CREATE TABLE agent_tasks (
   updated_at INTEGER DEFAULT (unixepoch())
 );
 
--- New: Linear cache (denormalized for fast mobile reads)
+-- New: Linear cache (denormalized for fast reads)
 CREATE TABLE linear_projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -316,9 +279,6 @@ CREATE TABLE auth_sessions (
 
 | Layer | Current | Adding |
 |-------|---------|--------|
-| Auth | None | GitHub OAuth (expo-auth-session) + FaceID (expo-local-authentication) + expo-secure-store |
 | Linear | None | @linear/sdk + webhook receiver + LinearWebhookClient signature verify |
 | Real-time | 3s polling | Server-Sent Events (SSE) via Next.js route handlers |
 | Agent orchestration | None | Temporal.io TypeScript SDK (workflows + activities + workers) |
-| Push notifications | Stub only | expo-notifications + Firebase Cloud Messaging |
-| Token storage | Plaintext API key | expo-secure-store (Keychain on iOS) |

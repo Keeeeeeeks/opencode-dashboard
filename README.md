@@ -1,1367 +1,164 @@
-# OpenCode Dashboard
-
-Real-time Kanban board and encrypted message feed for tracking oh-my-opencode agent work. Designed to run on a headless Mac Mini, accessed securely over Tailscale from your phone or laptop.
-
----
-
-## Table of Contents
-
-### For Humans
-1. [Features](#features)
-2. [Quick Start](#quick-start)
-3. [Architecture Overview](#architecture-overview)
-
-### Setup & Deployment
-4. [Prerequisites](#prerequisites)
-5. [Step 1 — Mac Mini Setup](#step-1--mac-mini-setup)
-6. [Step 2 — Install Tailscale on Mac Mini](#step-2--install-tailscale-on-mac-mini)
-7. [Step 3 — Install & Configure OpenClaw](#step-3--install--configure-openclaw)
-8. [Step 4 — Deploy the Dashboard](#step-4--deploy-the-dashboard)
-9. [Step 5 — Expose via Tailscale Serve](#step-5--expose-the-dashboard-via-tailscale-serve)
-10. [Step 6 — Connect Clients](#step-6--connect-clients)
-11. [Step 7 — oh-my-opencode Hook](#step-7--oh-my-opencode-hook)
-12. [Step 8 — Verify Everything Works](#step-8--verify-everything-works)
-13. [Step 9 — OpenClaw Cron Jobs (Optional)](#step-9--openclaw-cron-jobs-optional)
-
-### For Agents
-14. [API Reference](#api-reference)
-15. [Database Schema](#database-schema)
-16. [Conventions for Agents](#conventions-for-agents)
-17. [CLI Usage](#cli-usage)
-
-### Reference
-18. [Environment Variables](#environment-variables)
-19. [Security Hardening Checklist](#security-hardening-checklist)
-20. [Tailscale ACL Policy (Optional)](#tailscale-acl-policy-optional)
-21. [Troubleshooting](#troubleshooting)
-22. [Tech Stack](#tech-stack)
-23. [Mobile App](#mobile-app)
-24. [Data Storage](#data-storage)
+<p align="center">
+  <img src="public/branding/ocd-logo.png" alt="OCD — OpenClaw Dashboard" width="480" />
+</p>
+<h3 align="center">OCD — OpenClaw Dashboard</h3>
+<p align="center">Real-time Kanban board and encrypted message feed for tracking autonomous AI agent work.</p>
 
 ---
 
-## Features
+## What This Repo Does
 
-### Kanban Board
-Drag-and-drop task management with six status columns:
-- **Pending** — Tasks waiting to start
-- **In Progress** — Active work
-- **Blocked** — Waiting on dependencies
-- **Completed** — Finished tasks
-- **Cancelled** — Abandoned work
-- **Icebox** — Deferred for later
+OCD is a self-hosted Next.js dashboard for monitoring AI coding agents. Claude Code, OpenCode, Codex, or any agent that can hit a REST endpoint can push status updates here. You get a live board showing what's running, what's stuck, and what shipped.
 
-Three priority levels (low, medium, high) with visual badges. Cards display agent, project, session, and timestamp metadata.
+The Kanban board has 6 status columns (pending, in_progress, review, blocked, completed, icebox), drag-and-drop reordering, and 3 priority levels with weighted scoring (5/3/1). Tasks support parent/child relationships up to 3 levels deep, inline comments, and sprint assignment.
 
-### Task Hierarchy
-Parent/child task relationships up to three levels deep. Parent cards show:
-- Subtask count badge (e.g., "3 subtasks")
-- Expand/collapse toggle
-- Nested children with visual connector lines
+Velocity tracking and burndown charts are built in. Seven analytics chart types cover throughput, cycle time, status distribution, priority breakdown, agent workload, completion trends, and blocked task aging. All of it reads from a local SQLite database with WAL mode, no external database required.
 
-Creating a child task automatically links it to the parent. Deleting a parent cascades to all children.
+The message feed uses NaCl secretbox (XSalsa20-Poly1305) for encrypted agent notifications. Agents can tag messages to specific tasks or sessions, leaving durable breadcrumbs you can audit later.
 
-### Comments
-Markdown-lite comments on any task. Supports:
-- **Bold** and *italic* text
-- `Inline code`
-- Multi-line text
-
-Each card shows a MessageSquare icon with comment count badge. Click to open the comment drawer with full history and author attribution.
-
-### Sprint Management
-Full sprint lifecycle:
-1. **Create** — Name, start/end dates (UNIX timestamps), optional goal
-2. **Assign** — Link tasks via sprint badge or at creation time
-3. **Filter** — View board filtered to a single sprint
-4. **Track** — Monitor sprint status (planning → active → completed)
-
-Sprint cards show task count and date range. Transition sprints through lifecycle with PATCH requests.
-
-### Velocity & Burndown
-Priority-weighted velocity tracking:
-- **High priority** = 5 points
-- **Medium priority** = 3 points
-- **Low priority** = 1 point
-
-Sprint detail view shows:
-- Total points vs completed points
-- Progress bar with percentage
-- SVG burndown chart (ideal vs actual)
-- Daily completion data
-
-### Analytics Dashboard
-Linear-style analytics at `/analytics` with seven chart types:
-
-**Throughput (Bar Chart)**
-Weekly completed task count over time.
-
-**Created vs Completed (Line Chart)**
-Dual-line chart showing task creation rate vs completion rate. Identifies backlog growth or shrinkage.
-
-**Cycle Time Trend (Line Chart)**
-Average time from start to completion, grouped by week. Tracks process efficiency.
-
-**Status Distribution (Donut Chart)**
-Current task breakdown by status. Shows work-in-progress limits and bottlenecks.
-
-**Priority Distribution (Horizontal Bar Chart)**
-Task count by priority level. Helps balance urgent vs important work.
-
-**Velocity Trend (Line Chart)**
-Sprint-over-sprint velocity comparison. Tracks team capacity and predictability.
-
-**Agent Workload (Horizontal Bar Chart)**
-Per-agent task distribution (total, completed, in progress). Identifies load imbalance.
-
-**Filters & Presets**
-- Time presets: 7 days, 30 days, 90 days
-- Sprint filter: Analyze specific sprint
-- Project filter: Scope to single project
-- Agent filter: Individual contributor metrics
-
-**Summary Cards**
-Four cards at the top show:
-- Total tasks in period
-- Completed tasks
-- Average cycle time (days)
-- Average lead time (days)
-
-### Status History Tracking
-Every status change is logged with:
-- Old status
-- New status
-- Changed by (agent)
-- Timestamp
-
-`completed_at` field automatically set when status changes to `completed` and cleared when moved back to any other status.
-
-### Encrypted Messages
-All messages encrypted at rest using NaCl secretbox (XSalsa20-Poly1305). Messages can be:
-- Linked to a specific task (`todo_id`)
-- Linked to a session (`session_id`)
-- Standalone notifications
-
-Encryption key stored in `~/.opencode-dashboard/key` with `chmod 600` permissions.
-
-### Real-time Updates
-Dashboard polls every 3 seconds for:
-- New tasks
-- Status changes
-- New comments
-- New messages
-- Sprint updates
-
-Polling is client-side with configurable interval. SSE planned for future.
-
-### Dark Mode
-Full dark mode support across:
-- Web dashboard (Next.js)
-- Mobile app (React Native)
-- All charts and visualizations
-
-Automatically respects system preference with manual toggle.
-
-### Mobile App
-React Native / Expo companion app with:
-- Full Kanban board
-- Task creation and editing
-- Comment viewing
-- Sprint filtering
-- Dark mode support
-
-Connects to dashboard API over Tailscale for secure remote access.
+The dashboard polls every 3 seconds, runs in dark mode, and binds to 127.0.0.1 by default. It was built for headless Mac Minis accessed over Tailscale, but it works anywhere you can run a Node process. Agents POST events to the REST API; the board updates automatically.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone and install
 git clone https://github.com/Keeeeeeeks/opencode-dashboard.git
 cd opencode-dashboard
 bun install
-
-# Configure
 cp .env.example .env.local
-# Edit .env.local and set DASHBOARD_API_KEY
-
-# Build and run
-bun run build
-bun run start
-
-# Seed sample data (optional)
-bun run seed
-
-# Run e2e tests
-bun run test:e2e
-```
-
-Dashboard runs on `http://127.0.0.1:3000` by default
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Mac Mini (headless)                                    │
-│                                                         │
-│  ┌──────────────┐   ┌──────────────────────────────┐    │
-│  │  OpenClaw     │   │  Next.js Dashboard           │    │
-│  │  Gateway      │   │  127.0.0.1:3000              │    │
-│  │  127.0.0.1:   │   │                              │    │
-│  │  18789        │   │  SQLite + NaCl encryption     │    │
-│  └──────┬───────┘   └──────────────┬───────────────┘    │
-│         │                          │                    │
-│         │  oh-my-opencode hook     │                    │
-│         │  POSTs events ──────────►│                    │
-│         │                          │                    │
-│  ┌──────┴──────────────────────────┴───────────────┐    │
-│  │  Tailscale Serve                                │    │
-│  │  /          → 127.0.0.1:18789  (OpenClaw)       │    │
-│  │  /opencode  → 127.0.0.1:3000   (Dashboard)     │    │
-│  └─────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
-         ▲                          ▲
-         │  WireGuard tunnel        │  WireGuard tunnel
-         │  (encrypted)             │  (encrypted)
-    ┌────┴─────┐             ┌──────┴──────┐
-    │  iPhone  │             │  Laptop     │
-    │  Tailscale             │  Tailscale  │
-    │  app     │             │  + browser  │
-    └──────────┘             └─────────────┘
-```
-
-**Key design principle**: Both services bind to `127.0.0.1` only. Tailscale Serve proxies HTTPS traffic from your tailnet to localhost — no ports are exposed on the LAN or internet.
-
----
-
-## Prerequisites
-
-| Requirement | Minimum | Notes |
-|-------------|---------|-------|
-| macOS | 13 Ventura+ | Mac Mini target OS |
-| Node.js | 20+ | LTS recommended |
-| Bun | 1.0+ | Package manager & runtime |
-| Git | 2.39+ | Ships with Xcode CLI tools |
-| Tailscale account | Free tier | [tailscale.com/start](https://tailscale.com/start) |
-| Anthropic API key | — | For OpenClaw / Claude |
-
----
-
-## Step 1 — Mac Mini Setup
-
-If starting from a fresh Mac Mini:
-
-```bash
-# Install Xcode command-line tools (includes git, clang, etc.)
-xcode-select --install
-
-# Install Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install Node.js and Bun
-brew install node
-brew install oven-sh/bun/bun
-
-# Verify
-node --version   # Should be 20+
-bun --version    # Should be 1.0+
-git --version    # Should be 2.39+
-```
-
-### Optional (advanced): Dedicated runtime user
-
-Default recommendation: run install + onboarding as your normal logged-in macOS GUI user.
-
-OpenClaw onboarding on macOS depends on per-user TCC permissions (Accessibility, Screen Recording, Automation, Notifications, etc.).
-If you switch to a separate non-admin user too early, onboarding commonly fails or misses required permissions.
-
-Use a dedicated `opagent` user only for hardened runtime separation after OpenClaw is already installed/onboarded and working:
-
-```bash
-# Create user (requires admin)
-sudo dscl . -create /Users/opagent
-sudo dscl . -create /Users/opagent UserShell /bin/zsh
-sudo dscl . -create /Users/opagent RealName "OpenCode Agent"
-sudo dscl . -create /Users/opagent UniqueID 550
-sudo dscl . -create /Users/opagent PrimaryGroupID 20
-sudo dscl . -create /Users/opagent NFSHomeDirectory /Users/opagent
-sudo mkdir -p /Users/opagent
-sudo chown opagent:staff /Users/opagent
-
-# Set password
-sudo dscl . -passwd /Users/opagent <password>
-
-# Optional: switch after OpenClaw onboarding is complete
-su - opagent
-```
-
-If you use `opagent`, keep OpenClaw in the original onboarded user context and run the dashboard service under `opagent`.
-
----
-
-## Step 2 — Install Tailscale on Mac Mini
-
-### Install
-
-Download the **standalone** macOS app (recommended over App Store for headless use):
-
-```bash
-brew install --cask tailscale
-```
-
-Or download directly from [tailscale.com/download/mac](https://tailscale.com/download/mac).
-
-### Authenticate
-
-```bash
-# Start Tailscale and authenticate
-tailscale up
-```
-
-This opens a browser to sign in with your identity provider (Google, GitHub, Microsoft, etc.). On a headless Mac Mini without a display, use `--auth-key`:
-
-```bash
-# Generate an auth key at: https://login.tailscale.com/admin/settings/keys
-tailscale up --auth-key=tskey-auth-XXXXX
-```
-
-### Enable Tailscale SSH (optional but recommended)
-
-```bash
-tailscale set --ssh
-```
-
-This lets you SSH into the Mac Mini from any device in your tailnet **without SSH keys** — Tailscale handles authentication via your identity provider.
-
-### Verify
-
-```bash
-tailscale status
-# Should show your Mac Mini's Tailscale IP (100.x.y.z)
-
-tailscale ip -4
-# Prints just the IPv4 address
-```
-
-### Find your `<your-tailnet>` value
-
-Use one of these methods:
-
-```bash
-# Recommended (requires jq)
-tailscale status --json | jq -r '.MagicDNSSuffix'
-# Example output: cat-crocodile.ts.net
-
-# Without jq: print JSON and look for MagicDNSSuffix
-tailscale status --json
-```
-
-For URLs like `https://mac-mini.<your-tailnet>.ts.net`, your `<your-tailnet>` is the suffix without `.ts.net`.
-Example: `cat-crocodile.ts.net` -> `<your-tailnet>` is `cat-crocodile`.
-
-You can also find it in the Tailscale admin console DNS page:
-`https://login.tailscale.com/admin/dns`
-
-### Enable MagicDNS and HTTPS
-
-MagicDNS is enabled by default on tailnets created after October 2022. To verify:
-
-1. Go to [login.tailscale.com/admin/dns](https://login.tailscale.com/admin/dns)
-2. Confirm **MagicDNS** is toggled ON
-3. Under **HTTPS Certificates**, click **Enable HTTPS**
-
-> **Note**: Enabling HTTPS publishes your machine names on Let's Encrypt's Certificate Transparency logs. This reveals the name `mac-mini.<tailnet>.ts.net` publicly, but the machine itself remains inaccessible outside your tailnet.
-
----
-
-## Step 3 — Install & Configure OpenClaw
-
-Run this step as the same logged-in macOS user that will own OpenClaw permissions and onboarding.
-Do not switch to `opagent` before this step.
-
-### Install
-
-```bash
-# Option A: One-liner (recommended)
-curl -fsSL https://openclaw.ai/install.sh | bash
-
-# Option B: npm global
-npm install -g openclaw@latest
-```
-
-### Run the onboarding wizard
-
-```bash
-openclaw onboard --install-daemon
-```
-
-This will:
-1. Create `~/.openclaw/openclaw.json` (config file, JSON5 format)
-2. Generate a gateway auth token
-3. Install a launchd service (`ai.openclaw.gateway`) so the gateway runs at boot
-4. Prompt for your Anthropic API key
-
-### Configure for localhost-only
-
-Edit `~/.openclaw/openclaw.json`:
-
-```json5
-{
-  gateway: {
-    port: 18789,
-    bind: "loopback",       // CRITICAL: only 127.0.0.1
-    auth: {
-      mode: "token",        // Require token for API access
-      // Token was auto-generated during onboarding.
-      // To regenerate: openclaw config set gateway.auth.token "$(openssl rand -hex 32)"
-    }
-  }
-}
-```
-
-### Manage the gateway service
-
-```bash
-openclaw gateway status    # Check if running
-openclaw gateway start     # Start the daemon
-openclaw gateway stop      # Stop the daemon
-openclaw gateway restart   # Restart after config changes
-```
-
-### Verify
-
-```bash
-# Check the gateway is listening on loopback only
-lsof -iTCP:18789 -sTCP:LISTEN
-# Should show *:127.0.0.1:18789, NOT *:18789 or 0.0.0.0:18789
-```
-
-### State directory layout
-
-```
-~/.openclaw/
-├── openclaw.json                   # Main config (JSON5)
-├── .env                            # Env vars loaded by daemon
-├── workspace/                      # Agent workspace
-├── agents/<agentId>/agent/
-│   ├── auth-profiles.json          # OAuth + API keys
-│   └── auth.json                   # Runtime cache
-└── credentials/                    # Legacy OAuth imports
-```
-
----
-
-## Step 4 — Deploy the Dashboard
-
-### Clone the repository
-
-```bash
-git clone https://github.com/Keeeeeeeks/opencode-dashboard.git
-cd opencode-dashboard
-```
-
-### Configure environment
-
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local` — **at minimum set `DASHBOARD_API_KEY`**:
-
-```bash
-# Generate a secure key
-openssl rand -hex 32
-```
-
-Paste it as the value for `DASHBOARD_API_KEY` in `.env.local`:
-
-```env
-HOST=127.0.0.1
-PORT=3000
-DASHBOARD_API_KEY=<your-generated-key>
-ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
-```
-
-### Install dependencies and start
-
-```bash
-bun install
-bun run build    # Production build
-bun run start    # Starts on 127.0.0.1:3000
-```
-
-### Run as a persistent service (recommended)
-
-Use `launchd` to keep the dashboard running across reboots:
-
-```bash
-cat > ~/Library/LaunchAgents/com.opencode-dashboard.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.opencode-dashboard</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>WorkingDirectory</key>
-  <string>/Users/opagent/opencode-dashboard</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/bun</string>
-    <string>run</string>
-    <string>start</string>
-  </array>
-  <key>StandardOutPath</key>
-  <string>/tmp/opencode-dashboard.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/opencode-dashboard.err</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-  </dict>
-</dict>
-</plist>
-EOF
-
-# Adjust WorkingDirectory if your clone is elsewhere
-
-# Load the service
-launchctl load ~/Library/LaunchAgents/com.opencode-dashboard.plist
-
-# Verify
-curl http://127.0.0.1:3000
-```
-
-### Verify
-
-```bash
-curl -s http://127.0.0.1:3000 | head -20
-# Should return HTML
-
-curl -s http://127.0.0.1:3000/api/sessions
-# Should return JSON (empty array initially)
-```
-
----
-
-## Step 5 — Expose via Tailscale Serve
-
-This makes both the OpenClaw control UI and the dashboard accessible from your phone and laptop **without** opening any ports.
-
-### Configure two routes
-
-```bash
-# OpenClaw control UI at the root
-tailscale serve --bg --set-path / 18789
-
-# OpenCode Dashboard at /opencode
-tailscale serve --bg --set-path /opencode 3000
-```
-
-This gives you:
-
-| URL | Service |
-|-----|---------|
-| `https://<hostname>.<tailnet>.ts.net/` | OpenClaw control UI |
-| `https://<hostname>.<tailnet>.ts.net/opencode` | OpenCode Dashboard |
-
-### Important: set ASSET_PREFIX
-
-When serving the dashboard at a subpath, Next.js needs to know where to load CSS/JS from. Add to `.env.local`:
-
-```env
-ASSET_PREFIX=/opencode
-```
-
-Then rebuild and restart:
-
-```bash
+# Edit .env.local -- set DASHBOARD_API_KEY=$(openssl rand -hex 32)
 bun run build && bun run start
-```
-
-Without this, the page HTML loads but styles and interactivity will be missing.
-
-### Verify
-
-```bash
-tailscale serve status
-# Should show:
-#   https://<hostname>.<tailnet>.ts.net/
-#   |-- proxy http://127.0.0.1:18789
-#
-#   https://<hostname>.<tailnet>.ts.net/opencode
-#   |-- proxy http://127.0.0.1:3000
-```
-
-From another device in your tailnet:
-```
-https://<hostname>.<tailnet>.ts.net          → OpenClaw
-https://<hostname>.<tailnet>.ts.net/opencode → Dashboard
+# Optional: bun run seed (sample data)
+# Dashboard at http://127.0.0.1:3000
 ```
 
 ---
 
-## Step 6 — Add Devices to Your Tailnet
+## What You Need to Make It Sing
 
-Every device that needs to access the dashboard must join your Tailscale network. The key rule: **sign in with the same identity provider** you used on the Mac Mini.
+The dashboard provides the API and UI. Getting agents to automatically update the board requires a bit of wiring on your end.
 
-### iPhone / iPad
+### Unified Message/Task Queue
 
-1. Install **Tailscale** from the [App Store](https://apps.apple.com/app/tailscale/id1470499037)
-2. Open the app → **Sign in** with the same account (Google, GitHub, etc.)
-3. Allow the VPN configuration when prompted
-4. Open Safari and visit:
-   - **OpenClaw**: `https://<hostname>.<tailnet>.ts.net`
-   - **Dashboard**: `https://<hostname>.<tailnet>.ts.net/opencode`
+OCD doesn't come with a message broker. To get agents (Claude Code, OpenCode, Codex, etc.) pushing updates automatically, you need:
 
-> **VPN On Demand** (recommended): iOS Settings → VPN → Tailscale → Connect On Demand → ON. This keeps the tunnel alive so pages load instantly.
+- A shared task queue that your IDE terminals and agent runtimes can push to
+- The included `opencode-hook/dashboard-hook.ts` is a starting point. It POSTs agent events to the dashboard API.
+- Wire it into whatever orchestration layer you use: oh-my-opencode hooks, Claude Code custom commands, Codex task runners, etc.
 
-### macOS
+The mental model: agents do work, a hook intercepts events, the hook POSTs to the dashboard API, the board updates.
 
-```bash
-brew install --cask tailscale
-tailscale up
-open https://<hostname>.<tailnet>.ts.net/opencode
-```
+### Prompt Format for Handoff
 
-### Linux
-
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-xdg-open https://<hostname>.<tailnet>.ts.net/opencode
-```
-
-### Windows
-
-1. Download from [tailscale.com/download/windows](https://tailscale.com/download/windows)
-2. Sign in with the same identity provider
-3. Open `https://<hostname>.<tailnet>.ts.net/opencode`
-
-### Verify a new device is connected
-
-On the Mac Mini:
-
-```bash
-tailscale status
-```
-
-Or check the admin console: [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines) — your new device should appear in the list.
-
-### React Native / Expo mobile app
-
-Once Tailscale is connected on the device, the app reaches the API directly:
-
-```bash
-cd mobile
-bun install
-export EXPO_PUBLIC_API_URL=https://<hostname>.<tailnet>.ts.net
-bun run ios   # or bun run android
-```
-
----
-
-## Step 7 — oh-my-opencode Hook
-
-The hook sends agent events (task progress, session updates, todos) to the dashboard in real time.
-
-### Install the hook
-
-```bash
-# On the Mac Mini (where oh-my-opencode runs)
-cp opencode-hook/dashboard-hook.ts ~/.opencode/hooks/
-```
-
-### Configure the hook
-
-```bash
-# Add to your shell profile (~/.zshrc or ~/.bashrc)
-export DASHBOARD_URL=http://127.0.0.1:3000
-export DASHBOARD_API_KEY=<same-key-from-env.local>
-```
-
-Since OpenClaw and the dashboard both run on the Mac Mini, the hook communicates over loopback — no network exposure.
-
-### Verify the hook
-
-```bash
-# Send a test event
-curl -X POST http://127.0.0.1:3000/api/events \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -d '{"type": "test", "data": {"message": "Hook test"}}'
-```
-
----
-
-## Step 8 — Verify Everything Works
-
-Run through this checklist after setup:
-
-```bash
-# 1. OpenClaw gateway is running on loopback
-lsof -iTCP:18789 -sTCP:LISTEN
-# ✓ Should show 127.0.0.1:18789
-
-# 2. Dashboard is running on loopback
-lsof -iTCP:3000 -sTCP:LISTEN
-# ✓ Should show 127.0.0.1:3000
-
-# 3. Tailscale Serve is proxying
-tailscale serve status
-# ✓ Should show https://mac-mini.<tailnet>.ts.net -> http://127.0.0.1:3000
-
-# 4. No ports exposed on LAN
-# From another device on your local network (NOT tailnet):
-curl http://<mac-mini-lan-ip>:3000
-# ✓ Should fail / connection refused
-
-# 5. Dashboard accessible via Tailscale
-# From a device in your tailnet:
-curl https://mac-mini.<your-tailnet>.ts.net
-# ✓ Should return dashboard HTML
-
-# 6. API auth is working
-curl -s https://mac-mini.<your-tailnet>.ts.net/api/events \
-  -X POST -H "Content-Type: application/json" \
-  -d '{"type":"test"}'
-# ✓ Should return 401 (no auth header)
-
-curl -s https://mac-mini.<your-tailnet>.ts.net/api/events \
-  -X POST -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -d '{"type":"test","data":{}}'
-# ✓ Should return 200
-```
-
----
-
-## Step 9 — OpenClaw Cron Jobs (Optional)
-
-Schedule OpenClaw to check the dashboard board on a recurring basis.
-
-### Check the board every 4 hours
-
-```bash
-openclaw cron add \
-  --name "Check dashboard board" \
-  --every 4h \
-  --message "Check the OpenCode Dashboard at http://127.0.0.1:3000/api/todos for any stale in_progress tasks or high-priority pending items. Summarize what you find." \
-  --announce
-```
-
-### Other useful cron examples
-
-```bash
-# Daily standup summary at 9am
-openclaw cron add \
-  --name "Daily board summary" \
-  --cron "0 9 * * *" \
-  --tz "America/Los_Angeles" \
-  --message "Summarize yesterday's completed tasks and today's pending tasks from http://127.0.0.1:3000/api/todos. Be concise." \
-  --announce
-
-# One-shot reminder
-openclaw cron add \
-  --name "Reminder: review PRs" \
-  --at "+2h" \
-  --message "Reminder: review open PRs on opencode-dashboard." \
-  --announce \
-  --delete-after-run
-```
-
-### Manage cron jobs
-
-```bash
-openclaw cron list           # List all jobs
-openclaw cron run <id>       # Test-run a job now
-openclaw cron disable <id>   # Pause a job
-openclaw cron enable <id>    # Resume a job
-openclaw cron rm <id>        # Delete a job
-```
-
----
-
-## API Reference
-
-All endpoints require `Authorization: Bearer $DASHBOARD_API_KEY` header.
-
-### Core Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/events` | POST | Receive events from oh-my-opencode hook |
-| `/api/todos` | GET | List todos. Query params: `session_id`, `status` (comma-separated), `since` (timestamp), `id` (single), `parent_id`, `top_level=true`, `sprint_id`, `project`, `agent` |
-| `/api/todos` | POST | Create or update a single todo. Body: `{id?, content, status?, priority?, parent_id?, sprint_id?, agent?, project?, session_id?}` |
-| `/api/todos` | PUT | Batch create/update todos. Body: `{todos: [{id, content, status?, priority?, ...}, ...]}` |
-| `/api/sessions` | GET | List all sessions |
-| `/api/sessions` | POST | Create a session. Body: `{id?, name?, started_at?}` |
-| `/api/messages` | GET | List messages. Query params: `unread_only=true`, `since` (timestamp) |
-| `/api/messages` | POST | Mark messages as read. Body: `{ids: [1, 2, 3]}` |
-| `/api/messages/create` | POST | Create a message. Body: `{type, content, todo_id?, session_id?}` |
-
-### Hierarchy & Comments
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/todos/[id]/subtasks` | GET | List child tasks of parent |
-| `/api/todos/[id]/subtasks` | POST | Create child task. Body: `{content, priority?}` |
-| `/api/todos/[id]/comments` | GET | List comments on a task |
-| `/api/todos/[id]/comments` | POST | Create comment. Body: `{body, author?}` |
-
-### Sprints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/sprints` | GET | List all sprints |
-| `/api/sprints` | POST | Create sprint. Body: `{id?, name, start_date, end_date, goal?, status?}` |
-| `/api/sprints/[id]` | GET | Get sprint by ID |
-| `/api/sprints/[id]` | PATCH | Update sprint (e.g., status lifecycle). Body: `{status?, name?, goal?}` |
-| `/api/sprints/[id]/velocity` | GET | Get sprint velocity + daily burndown data |
-| `/api/todos/[id]/sprints` | GET | List sprints a task belongs to |
-| `/api/todos/[id]/sprints` | POST | Assign task to sprint. Body: `{sprint_id}` |
-| `/api/todos/[id]/sprints` | DELETE | Remove task from sprint. Body: `{sprint_id}` |
-
-### Analytics
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/analytics` | GET | Analytics data. Query params: `start` (timestamp), `end` (timestamp), `sprint_id?`, `project?`, `agent?` |
-
-Returns:
-- `throughput.weekly` — Weekly completed task count
-- `created_vs_completed.weekly` — Created vs completed by week
-- `cycle_time` — Average, median, per-task cycle time
-- `lead_time` — Average, median lead time
-- `status_distribution` — Task count by status
-- `priority_distribution` — Task count by priority
-- `agent_workload` — Per-agent task breakdown
-- `velocity_trend` — Sprint velocity over time
-
-### V2 Planner (Internal)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v2/tasks` | GET | List V2 tasks (structured planning) |
-| `/api/v2/tasks` | POST | Create V2 task. Body: `{tag?, title, description?, status?, priority?, dependencies?, details?, test_strategy?, complexity_score?, assigned_agent_id?, linear_issue_id?}` |
-| `/api/v2/tasks/[id]/subtasks` | GET | List V2 subtasks |
-| `/api/v2/tasks/[id]/subtasks` | POST | Create V2 subtask. Body: `{title, description?, status?, dependencies?, details?}` |
-| `/api/v2/tasks/next` | GET | Get next actionable V2 task (no blocking dependencies) |
-| `/api/v2/tasks/validate-deps` | POST | Validate V2 task dependencies. Body: `{dependencies: [1, 2, 3]}` |
-
----
-
-## Database Schema
-
-All tables use SQLite with WAL mode and foreign key constraints enabled.
-
-### `todos`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | UUID |
-| `session_id` | TEXT | | Session identifier |
-| `content` | TEXT | NOT NULL | Task description |
-| `status` | TEXT | DEFAULT 'pending' | One of: pending, in_progress, blocked, completed, cancelled, icebox |
-| `priority` | TEXT | DEFAULT 'medium' | One of: low, medium, high |
-| `agent` | TEXT | | Agent name |
-| `project` | TEXT | | Project identifier |
-| `parent_id` | TEXT | FK → todos.id CASCADE DELETE | Parent task ID (for hierarchy) |
-| `completed_at` | INTEGER | | UNIX timestamp when status changed to completed |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-| `updated_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Indexes**: `session_id`, `parent_id`
-
-### `todo_comments`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| `todo_id` | TEXT | FK → todos.id CASCADE DELETE | Task this comment belongs to |
-| `body` | TEXT | NOT NULL | Markdown-lite comment text |
-| `author` | TEXT | DEFAULT 'anonymous' | Comment author |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Indexes**: `todo_id`
-
-### `todo_status_history`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| `todo_id` | TEXT | FK → todos.id CASCADE DELETE | Task that changed |
-| `old_status` | TEXT | | Previous status (NULL for creation) |
-| `new_status` | TEXT | NOT NULL | New status |
-| `changed_by` | TEXT | | Agent or user who made the change |
-| `changed_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Indexes**: `todo_id`, `changed_at`
-
-### `sprints`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | UUID |
-| `name` | TEXT | NOT NULL | Sprint name |
-| `start_date` | INTEGER | NOT NULL | UNIX timestamp |
-| `end_date` | INTEGER | NOT NULL | UNIX timestamp |
-| `goal` | TEXT | | Sprint goal |
-| `status` | TEXT | DEFAULT 'planning' | One of: planning, active, completed |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-| `updated_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-### `todo_sprints`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `todo_id` | TEXT | FK → todos.id CASCADE DELETE | Task ID |
-| `sprint_id` | TEXT | FK → sprints.id CASCADE DELETE | Sprint ID |
-
-**Primary Key**: `(todo_id, sprint_id)`
-**Indexes**: `sprint_id`, `todo_id`
-
-### `messages`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| `type` | TEXT | NOT NULL | Message type |
-| `content` | TEXT | NOT NULL | Encrypted message content (NaCl secretbox) |
-| `todo_id` | TEXT | | Optional task link |
-| `session_id` | TEXT | | Optional session link |
-| `read` | INTEGER | DEFAULT 0 | 0 = unread, 1 = read |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Indexes**: `todo_id`, `session_id`, `read`
-
-### `sessions`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | TEXT | PRIMARY KEY | Session UUID |
-| `name` | TEXT | | Session name |
-| `started_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-| `ended_at` | INTEGER | | UNIX timestamp (NULL if active) |
-
-### `settings`
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `key` | TEXT | PRIMARY KEY | Setting key |
-| `value` | TEXT | | Setting value (JSON string) |
-
-### `tasks` (V2 System)
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| `tag` | TEXT | DEFAULT 'master' | Task tag |
-| `title` | TEXT | NOT NULL | Task title |
-| `description` | TEXT | | Task description |
-| `status` | TEXT | DEFAULT 'pending' | Task status |
-| `priority` | TEXT | DEFAULT 'medium' | Task priority |
-| `dependencies` | TEXT | | JSON array of task IDs |
-| `details` | TEXT | | Additional details |
-| `test_strategy` | TEXT | | Testing approach |
-| `complexity_score` | REAL | | Complexity estimate |
-| `assigned_agent_id` | TEXT | | Agent assignment |
-| `linear_issue_id` | TEXT | | Linear issue link |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-| `updated_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Indexes**: `tag`, `status`
-
-### `subtasks` (V2 System)
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | INTEGER | | Subtask ID (scoped to task) |
-| `task_id` | INTEGER | FK → tasks.id CASCADE DELETE | Parent task |
-| `title` | TEXT | NOT NULL | Subtask title |
-| `description` | TEXT | | Subtask description |
-| `status` | TEXT | DEFAULT 'pending' | Subtask status |
-| `dependencies` | TEXT | | JSON array of subtask IDs |
-| `details` | TEXT | | Additional details |
-| `created_at` | INTEGER | DEFAULT unixepoch() | UNIX timestamp |
-
-**Primary Key**: `(task_id, id)`
-**Indexes**: `task_id`
-
----
-
-## Conventions for Agents
-
-### Authentication
-All API calls require the `Authorization` header:
-```
-Authorization: Bearer $DASHBOARD_API_KEY
-```
-
-Use timing-safe comparison for validation. Requests without valid auth return `401 Unauthorized`.
-
-### Timestamps
-All timestamps are UNIX epoch seconds (not milliseconds).
-
-Example:
-```javascript
-const now = Math.floor(Date.now() / 1000);
-```
-
-### IDs
-- **Todo IDs**: String UUIDs (e.g., `"550e8400-e29b-41d4-a716-446655440000"`)
-- **Sprint IDs**: String UUIDs (auto-generated if not provided)
-- **Message IDs**: Integer autoincrement
-- **Session IDs**: String UUIDs
-
-### Status Values
-**Todos**: `pending`, `in_progress`, `blocked`, `completed`, `cancelled`, `icebox`
-
-**Sprints**: `planning`, `active`, `completed`
-
-**V2 Tasks**: `pending`, `in_progress`, `blocked`, `completed`, `cancelled`
-
-### Priority Values
-`low`, `medium`, `high`
-
-### Velocity Points
-- **Low priority** = 1 point
-- **Medium priority** = 3 points
-- **High priority** = 5 points
-
-### Hierarchy Rules
-- Maximum depth: 3 levels
-- Circular references are rejected
-- Deleting a parent cascades to all children
-- Child tasks can have different status than parent
-
-### Rate Limiting
-Default: 60 requests per 60-second window per IP.
-
-Configurable via:
-- `RATE_LIMIT_WINDOW_MS` (default: 60000)
-- `RATE_LIMIT_MAX_REQUESTS` (default: 60)
-
-Rate limit applies to POST/PUT/PATCH/DELETE endpoints only.
-
-### V1 vs V2 Systems
-- **V1** (`/api/todos`): Kanban board, sprints, comments, hierarchy
-- **V2** (`/api/v2/tasks`): Structured planner with dependencies, complexity scores, tags
-
-V2 merges V1 todos as negative-ID tasks for unified view at `/v2`. Both systems coexist independently.
-
-### CLI Scripts
-Use `curl` with Bearer auth:
-
-```bash
-# List all todos
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  http://127.0.0.1:3000/api/todos
-
-# Create a todo
-curl -X POST http://127.0.0.1:3000/api/todos \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"content":"New task","status":"pending","priority":"high"}'
-
-# Get analytics for last 30 days
-START=$(date -v-30d +%s)
-END=$(date +%s)
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  "http://127.0.0.1:3000/api/analytics?start=$START&end=$END"
-```
-
-### Seeding Data
-Populate sample data for testing:
-
-```bash
-bun run seed
-```
-
-This creates:
-- 20 sample todos with mixed status/priority
-- 3 sprints with task assignments
-- Parent/child task relationships
-- Comments on several tasks
-
-### Testing
-Run Playwright e2e tests:
-
-```bash
-bun run test:e2e
-```
-
-Tests cover:
-- Task creation and editing
-- Drag-and-drop status changes
-- Comment creation
-- Sprint assignment
-- Hierarchy operations
-
----
-
-## CLI Usage
-
-### Using curl directly
-
-```bash
-# Set your API key
-export DASHBOARD_API_KEY="your-key-here"
-
-# List all todos
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  http://127.0.0.1:3000/api/todos
-
-# Filter by status
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  "http://127.0.0.1:3000/api/todos?status=in_progress,blocked"
-
-# Get a single todo
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  "http://127.0.0.1:3000/api/todos?id=<todo-id>"
-
-# Create a todo
-curl -X POST http://127.0.0.1:3000/api/todos \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Implement feature X",
-    "status": "pending",
-    "priority": "high",
-    "agent": "sisyphus",
-    "project": "dashboard"
-  }'
-
-# Update a todo
-curl -X POST http://127.0.0.1:3000/api/todos \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "<todo-id>",
-    "status": "completed"
-  }'
-
-# Create a child task
-curl -X POST http://127.0.0.1:3000/api/todos/<parent-id>/subtasks \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Subtask 1",
-    "priority": "medium"
-  }'
-
-# Add a comment
-curl -X POST http://127.0.0.1:3000/api/todos/<todo-id>/comments \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "body": "**Ready for review**",
-    "author": "alex"
-  }'
-
-# Create a sprint
-curl -X POST http://127.0.0.1:3000/api/sprints \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Sprint 1",
-    "start_date": 1735689600,
-    "end_date": 1736899199,
-    "goal": "Ship analytics dashboard",
-    "status": "active"
-  }'
-
-# Assign task to sprint
-curl -X POST http://127.0.0.1:3000/api/todos/<todo-id>/sprints \
-  -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"sprint_id": "<sprint-id>"}'
-
-# Get sprint velocity
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  http://127.0.0.1:3000/api/sprints/<sprint-id>/velocity
-
-# Get analytics
-START=$(date -v-30d +%s)
-END=$(date +%s)
-curl -H "Authorization: Bearer $DASHBOARD_API_KEY" \
-  "http://127.0.0.1:3000/api/analytics?start=$START&end=$END"
-```
-
----
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `HOST` | No | `127.0.0.1` | Bind address. **Keep as loopback.** |
-| `PORT` | No | `3000` | Server port |
-| `DASHBOARD_API_KEY` | **Yes** | — | Shared secret for API auth (`openssl rand -hex 32`) |
-| `ALLOWED_ORIGINS` | No | `http://127.0.0.1:3000,http://localhost:3000` | Comma-separated CORS allowlist |
-| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window in ms |
-| `RATE_LIMIT_MAX_REQUESTS` | No | `60` | Max requests per window per IP |
-| `DASHBOARD_URL` | No | `http://127.0.0.1:3000` | Used by opencode-hook (agent side) |
-| `DATA_DIR` | No | `~/.opencode-dashboard` | SQLite DB and encryption key location |
-| `ASSET_PREFIX` | No | — | Set to subpath when behind a reverse proxy (e.g. `/opencode`) |
-
----
-
-## Security Hardening Checklist
-
-> **Status**: Phase 0 complete. Most critical and high items addressed.
-
-### Critical (before use)
-
-- [x] **API authentication** — All endpoints validate `Authorization: Bearer <DASHBOARD_API_KEY>` via timing-safe comparison.
-- [x] **Fix CORS** — `ALLOWED_ORIGINS` allowlist replaces wildcard `*`. `Authorization` included in allowed headers.
-- [x] **Bind to loopback** — `HOST=127.0.0.1` in `.env.local`. Never set `HOST=0.0.0.0`.
-
-### High (before daily use)
-
-- [x] **Rate limiting** — POST endpoints protected with sliding-window rate limiter (`RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS`).
-- [ ] **Validate the hook contract** — The hook in `opencode-hook/dashboard-hook.ts` was written speculatively. Verify against the actual oh-my-opencode hook API.
-- [x] **Add auth to the hook** — Hook sends `Authorization: Bearer ${DASHBOARD_API_KEY}` on all requests.
-
-### Medium (recommended)
-
-- [ ] **Replace polling with SSE** — Reduce latency and server load.
-- [x] **Encryption key management** — Key file enforced to `chmod 600`, data dir to `0o700`. `DATA_DIR` env var supported.
-- [ ] **Push notifications** — `expo-notifications` is imported but not wired up. Add FCM or APNs.
-- [x] **Batch todo sync** — `PUT /api/todos` accepts bulk upsert; hook batches all todos in one request with POST fallback.
-
-### Low (nice to have)
-
-- [ ] **Migrate to PostgreSQL** — Needed for multi-device or multi-agent setups.
-- [ ] **Offline caching** — Mobile app has no offline support.
-- [x] **Audit logging** — Status history table logs all status changes with timestamp and agent. Structured JSON logs for auth failures and rate limit hits.
-
----
-
-## Tailscale ACL Policy (Optional)
-
-If you want to restrict which tailnet devices can access the Mac Mini, edit your ACL policy at [login.tailscale.com/admin/acls](https://login.tailscale.com/admin/acls):
+When handing a task to an agent, include enough context for the dashboard to track it:
 
 ```json
 {
-  "groups": {
-    "group:dashboard-users": ["your-email@example.com"]
-  },
-  "acls": [
-    {
-      "action": "accept",
-      "src": ["group:dashboard-users"],
-      "dst": ["mac-mini:443"]
-    }
-  ],
-  "ssh": [
-    {
-      "action": "accept",
-      "src": ["group:dashboard-users"],
-      "dst": ["mac-mini"],
-      "users": ["autogroup:nonroot"]
-    }
-  ]
+  "content": "Implement feature X",
+  "status": "pending",
+  "priority": "high",
+  "agent": "sisyphus",
+  "project": "my-project",
+  "session_id": "ses_abc123"
 }
 ```
 
-This ensures only devices belonging to `group:dashboard-users` can reach the dashboard (port 443 via Tailscale Serve) or SSH into the Mac Mini.
+Agents POST to `/api/todos` with Bearer auth. See `docs/api.md` for the full schema.
+
+### Additional Cron Jobs
+
+The dashboard doesn't auto-refresh itself or notify you. Set up cron jobs for the things that matter.
+
+**Board refresh** -- periodically check for stale tasks:
+
+```bash
+openclaw cron add --name "Check board" --every 4h \
+  --message "Check /api/todos for stale in_progress tasks or high-priority pending items."
+```
+
+**Human notifications on blockers/completions** -- alert yourself when tasks get stuck or finish:
+
+```bash
+openclaw cron add --name "Blocker alert" --cron "*/30 * * * *" \
+  --message "Check /api/todos?status=blocked -- notify me if anything is blocked."
+```
+
+**Ongoing write-ups** -- have an agent periodically summarize progress:
+
+```bash
+openclaw cron add --name "Progress digest" --cron "0 18 * * *" \
+  --message "Write a 3-sentence summary of today's completed tasks from /api/analytics."
+```
 
 ---
 
-## Troubleshooting
+## What This Repo Does NOT Do
 
-### Dashboard not loading
+- **Does not assume unsupervised all-day agent cooking.** This is a monitoring dashboard, not an autopilot. It shows you what agents are doing so you can intervene. You still need to check in.
 
-```bash
-# Is Next.js running?
-curl http://127.0.0.1:3000
-# If not: check launchd logs
-cat /tmp/opencode-dashboard.log
-cat /tmp/opencode-dashboard.err
+- **Does not configure cron jobs or heartbeats for you.** The dashboard is passive. It receives events and displays them. Setting up the hooks, crons, and notification pipelines is on you. The section above tells you what to set up.
 
-# Is Tailscale Serve active?
-tailscale serve status
+- **Does not hand off stuck tasks to CLI agents.** If a task is blocked, the dashboard shows it. It does NOT automatically reassign work, spawn new agents, or retry failed tasks. That's orchestration. Build it on top if you want it.
 
-# Is Tailscale connected?
-tailscale status
+---
+
+## Architecture
+
+```
+┌──────────────────────────── Mac mini (headless) ────────────────────────────┐
+│                                                                              │
+│  OpenClaw Gateway (18789, loopback)   OCD Next.js app (3000, loopback)      │
+│  └─ /api/agent + cron API             └─ SQLite + NaCl @ ~/.opencode-dash   │
+│        ^                                      ^                              │
+│        |  REST                                |  REST/JSON                  │
+│        |                                      |                              │
+│  oh-my-opencode / IDE hooks ─────────────────>|  /api/todos                 │
+│  Claude Code hooks          ─────────────────>|  /api/messages              │
+│  Codex task runners         ─────────────────>|  /api/analytics             │
+│                                                                              │
+│              Tailscale Serve (/ -> 18789, /opencode -> 3000)                │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                   ^
+                                   | encrypted WireGuard tunnel
+                                   |
+                           Human devices (phone, laptop, other agents)
 ```
 
-### "Connection refused" from phone/laptop
-
-1. Confirm Tailscale is **connected** on the client device (green icon, not grey)
-2. Confirm the Mac Mini shows as online in [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines)
-3. Try the Tailscale IP directly: `curl http://100.x.y.z:3000`
-4. If that works but the hostname doesn't, MagicDNS may be off → enable at [DNS settings](https://login.tailscale.com/admin/dns)
-
-### iOS app can't reach API
-
-1. Ensure Tailscale VPN is connected (check iOS Settings → VPN)
-2. Enable "VPN On Demand" to prevent disconnects
-3. The React Native app uses `EXPO_PUBLIC_API_URL` — make sure it's set to the `https://mac-mini.<tailnet>.ts.net` URL
-
-### SSH not working
-
-```bash
-# Is Tailscale SSH enabled on Mac Mini?
-tailscale status   # Look for "ssh" in the features column
-
-# Re-enable if needed
-tailscale set --ssh
-
-# Connect with verbose output
-ssh -v your-username@mac-mini
-```
-
-### OpenClaw gateway not reachable
-
-```bash
-# Is the daemon running?
-openclaw gateway status
-
-# Check what port/interface it's listening on
-lsof -iTCP:18789 -sTCP:LISTEN
-
-# Check logs
-cat /tmp/openclaw/openclaw-gateway.log
-
-# Restart if needed
-openclaw gateway restart
-```
+Both services bind to 127.0.0.1. Nothing touches 0.0.0.0. Tailscale Serve handles HTTPS without exposing LAN ports.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Web app** | Next.js 16, TypeScript, Tailwind CSS, @dnd-kit, Zustand |
-| **Database** | SQLite (better-sqlite3) |
-| **Encryption** | tweetnacl (NaCl secretbox) |
-| **Mobile app** | Expo, React Native, TypeScript, Zustand |
-| **Agent runtime** | OpenClaw (gateway on port 18789) |
-| **Coding agents** | oh-my-opencode (Sisyphus, Atlas, Hephaestus, etc.) |
-| **Secure access** | Tailscale (WireGuard, MagicDNS, auto-HTTPS) |
-| **Testing** | Playwright (e2e) |
+| Layer | Tech |
+|-------|------|
+| Frontend | Next.js 16, React 19, Tailwind CSS, @dnd-kit, Zustand |
+| Database | SQLite (better-sqlite3, WAL mode) |
+| Encryption | tweetnacl (NaCl secretbox) |
+| Testing | Playwright (e2e) |
+| Access | Tailscale (WireGuard mesh VPN) |
 
 ---
 
-## Mobile App
+## Documentation
 
-```bash
-cd mobile
-bun install
-bun run ios    # or bun run android
-```
-
-Set `EXPO_PUBLIC_API_URL` to your Tailscale hostname for remote access, or `http://localhost:3000` for local development.
+- `ARCHITECTURE.md` -- full system architecture and v2 schema
+- `docs/` -- task hierarchy spec, worklog API, analytics reference
+- `docs/api.md` -- REST API reference (todos, messages, analytics, sprints)
+- `docs/deployment.md` -- full deployment guide (Mac Mini setup, launchd, Tailscale Serve config)
 
 ---
 
-## Data Storage
+## Contributing
 
-| Item | Location | Notes |
-|------|----------|-------|
-| SQLite database | `~/.opencode-dashboard/data.db` | All todos, sessions, messages, sprints, comments, status history |
-| Encryption key | `~/.opencode-dashboard/key` | NaCl key, `chmod 600` |
-| OpenClaw config | `~/.openclaw/openclaw.json` | Gateway settings |
-| OpenClaw state | `~/.openclaw/agents/` | Per-agent auth and state |
-| Dashboard logs | `/tmp/opencode-dashboard.log` | stdout from launchd |
-| OpenClaw logs | `/tmp/openclaw/openclaw-gateway.log` | Gateway daemon logs |
+Fork, branch, PR. Run `bun run lint` and `bun run test:e2e` before submitting.
+
+Bug reports and feature requests go in Issues. Pull requests should describe how the change affects humans, agents, and automation (three short bullets). The loopback-only default is intentional -- don't change it without a solid security model.
+
+---
+
+## License
+
+MIT
+
