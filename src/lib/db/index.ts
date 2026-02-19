@@ -17,6 +17,9 @@ import type {
   Project,
   Agent,
   AgentTask,
+  LinearProject,
+  LinearIssue,
+  LinearWorkflowState,
   StatusHistoryEntry,
   DatabaseOperations,
 } from './types';
@@ -163,6 +166,47 @@ function initializeDatabase(): Database.Database {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS linear_projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      state TEXT,
+      progress REAL DEFAULT 0,
+      start_date TEXT,
+      target_date TEXT,
+      url TEXT,
+      team_id TEXT,
+      team_name TEXT,
+      synced_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS linear_issues (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES linear_projects(id),
+      identifier TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      priority INTEGER DEFAULT 0,
+      state_name TEXT,
+      state_type TEXT,
+      assignee_name TEXT,
+      assignee_avatar TEXT,
+      label_names TEXT,
+      estimate INTEGER,
+      url TEXT,
+      agent_task_id TEXT,
+      synced_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS linear_workflow_states (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      color TEXT,
+      position REAL
+    );
+
     CREATE TABLE IF NOT EXISTS todo_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
@@ -221,6 +265,10 @@ function initializeDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent_id ON agent_tasks(agent_id);
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_agent_tasks_project_id ON agent_tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_linear_issues_project_id ON linear_issues(project_id);
+    CREATE INDEX IF NOT EXISTS idx_linear_issues_state_type ON linear_issues(state_type);
+    CREATE INDEX IF NOT EXISTS idx_linear_issues_agent_task_id ON linear_issues(agent_task_id);
+    CREATE INDEX IF NOT EXISTS idx_linear_workflow_states_team_id ON linear_workflow_states(team_id);
   `);
 
   // Migration: add project column to todos if not present
@@ -1633,6 +1681,215 @@ const db: DatabaseOperations = {
     return (result.changes ?? 0) > 0;
   },
 
+  upsertLinearProject(project: LinearProject): LinearProject {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const syncedAt = project.synced_at || now;
+
+    const stmt = database.prepare(`
+      INSERT INTO linear_projects (
+        id,
+        name,
+        description,
+        state,
+        progress,
+        start_date,
+        target_date,
+        url,
+        team_id,
+        team_name,
+        synced_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        state = excluded.state,
+        progress = excluded.progress,
+        start_date = excluded.start_date,
+        target_date = excluded.target_date,
+        url = excluded.url,
+        team_id = excluded.team_id,
+        team_name = excluded.team_name,
+        synced_at = excluded.synced_at
+    `);
+
+    stmt.run(
+      project.id,
+      project.name,
+      project.description,
+      project.state,
+      project.progress,
+      project.start_date,
+      project.target_date,
+      project.url,
+      project.team_id,
+      project.team_name,
+      syncedAt
+    );
+
+    return {
+      ...project,
+      synced_at: syncedAt,
+    };
+  },
+
+  getLinearProject(id: string): LinearProject | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_projects WHERE id = ?');
+    return (stmt.get(id) as LinearProject) || null;
+  },
+
+  getAllLinearProjects(): LinearProject[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_projects ORDER BY synced_at DESC, id DESC');
+    return stmt.all() as LinearProject[];
+  },
+
+  deleteLinearProject(id: string): boolean {
+    const database = getDatabase();
+    const detachIssuesStmt = database.prepare('UPDATE linear_issues SET project_id = NULL WHERE project_id = ?');
+    detachIssuesStmt.run(id);
+    const stmt = database.prepare('DELETE FROM linear_projects WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  upsertLinearIssue(issue: LinearIssue): LinearIssue {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const syncedAt = issue.synced_at || now;
+
+    const stmt = database.prepare(`
+      INSERT INTO linear_issues (
+        id,
+        project_id,
+        identifier,
+        title,
+        description,
+        priority,
+        state_name,
+        state_type,
+        assignee_name,
+        assignee_avatar,
+        label_names,
+        estimate,
+        url,
+        agent_task_id,
+        synced_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        identifier = excluded.identifier,
+        title = excluded.title,
+        description = excluded.description,
+        priority = excluded.priority,
+        state_name = excluded.state_name,
+        state_type = excluded.state_type,
+        assignee_name = excluded.assignee_name,
+        assignee_avatar = excluded.assignee_avatar,
+        label_names = excluded.label_names,
+        estimate = excluded.estimate,
+        url = excluded.url,
+        agent_task_id = excluded.agent_task_id,
+        synced_at = excluded.synced_at
+    `);
+
+    stmt.run(
+      issue.id,
+      issue.project_id,
+      issue.identifier,
+      issue.title,
+      issue.description,
+      issue.priority,
+      issue.state_name,
+      issue.state_type,
+      issue.assignee_name,
+      issue.assignee_avatar,
+      issue.label_names,
+      issue.estimate,
+      issue.url,
+      issue.agent_task_id,
+      syncedAt
+    );
+
+    return {
+      ...issue,
+      synced_at: syncedAt,
+    };
+  },
+
+  getLinearIssue(id: string): LinearIssue | null {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_issues WHERE id = ?');
+    return (stmt.get(id) as LinearIssue) || null;
+  },
+
+  getLinearIssuesByProject(projectId: string): LinearIssue[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_issues WHERE project_id = ? ORDER BY synced_at DESC, id DESC');
+    return stmt.all(projectId) as LinearIssue[];
+  },
+
+  getAllLinearIssues(): LinearIssue[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_issues ORDER BY synced_at DESC, id DESC');
+    return stmt.all() as LinearIssue[];
+  },
+
+  deleteLinearIssue(id: string): boolean {
+    const database = getDatabase();
+    const stmt = database.prepare('DELETE FROM linear_issues WHERE id = ?');
+    const result = stmt.run(id);
+    return (result.changes ?? 0) > 0;
+  },
+
+  linkAgentToIssue(issueId: string, agentTaskId: string | null): boolean {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare('UPDATE linear_issues SET agent_task_id = ?, synced_at = ? WHERE id = ?');
+    const result = stmt.run(agentTaskId, now, issueId);
+    return (result.changes ?? 0) > 0;
+  },
+
+  upsertLinearWorkflowState(state: LinearWorkflowState): LinearWorkflowState {
+    const database = getDatabase();
+    const stmt = database.prepare(`
+      INSERT INTO linear_workflow_states (
+        id,
+        team_id,
+        name,
+        type,
+        color,
+        position
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        team_id = excluded.team_id,
+        name = excluded.name,
+        type = excluded.type,
+        color = excluded.color,
+        position = excluded.position
+    `);
+
+    stmt.run(state.id, state.team_id, state.name, state.type, state.color, state.position);
+
+    return state;
+  },
+
+  getLinearWorkflowStates(teamId: string): LinearWorkflowState[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_workflow_states WHERE team_id = ? ORDER BY position ASC, name ASC');
+    return stmt.all(teamId) as LinearWorkflowState[];
+  },
+
+  getAllLinearWorkflowStates(): LinearWorkflowState[] {
+    const database = getDatabase();
+    const stmt = database.prepare('SELECT * FROM linear_workflow_states ORDER BY team_id ASC, position ASC, name ASC');
+    return stmt.all() as LinearWorkflowState[];
+  },
+
   close(): void {
     if (dbInstance) {
       dbInstance.close();
@@ -1658,6 +1915,9 @@ export type {
   Project,
   Agent,
   AgentTask,
+  LinearProject,
+  LinearIssue,
+  LinearWorkflowState,
   StatusHistoryEntry,
   DatabaseOperations,
 };
