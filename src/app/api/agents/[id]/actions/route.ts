@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
+import type { Agent } from '@/lib/db/types';
 import { eventBus } from '@/lib/events/eventBus';
+import {
+  getAgentTaskWorkflowId,
+  getTemporalClient,
+  TASK_QUEUE,
+} from '@/lib/temporal/client';
+import type { AgentTaskWorkflowInput } from '@/temporal/types';
 
 const AgentActionSchema = z.object({
   action: z.enum(['sleep', 'stop', 'unblock', 'restart']),
@@ -11,6 +18,77 @@ const AgentActionSchema = z.object({
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+function parseJsonField<T>(value: string | null): T | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildWorkflowInput(
+  agent: Agent,
+  taskId: string,
+  title: string,
+  priority?: 'high' | 'medium' | 'low',
+  linearIssueId?: string | null,
+  projectId?: string | null
+): AgentTaskWorkflowInput {
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    agentType: agent.type,
+    parentAgentId: agent.parent_agent_id ?? undefined,
+    taskId,
+    title,
+    priority,
+    linearIssueId: linearIssueId ?? undefined,
+    projectId: projectId ?? undefined,
+    soulMd: agent.soul_md ?? undefined,
+    skills: parseJsonField<string[]>(agent.skills),
+    config: parseJsonField<Record<string, unknown>>(agent.config),
+  };
+}
+
+async function signalWorkflow(agentId: string, taskId: string, signal: 'sleep' | 'cancel' | 'unblock'): Promise<void> {
+  try {
+    const client = await getTemporalClient();
+    const workflowId = getAgentTaskWorkflowId(agentId, taskId);
+    const handle = client.workflow.getHandle(workflowId);
+
+    if (signal === 'unblock') {
+      await handle.signal('unblock', 'manual unblock');
+      return;
+    }
+
+    await handle.signal(signal);
+  } catch (error) {
+    console.error(`Failed to signal Temporal workflow (${signal}):`, error);
+  }
+}
+
+async function startWorkflow(input: AgentTaskWorkflowInput): Promise<void> {
+  try {
+    const client = await getTemporalClient();
+    const workflowId = getAgentTaskWorkflowId(input.agentId, input.taskId);
+    await client.workflow.start('agentTaskWorkflow', {
+      taskQueue: TASK_QUEUE,
+      workflowId,
+      args: [input],
+    });
+  } catch (error) {
+    console.error('Failed to start Temporal workflow:', error);
+  }
+}
+
+function generateTaskId(): string {
+  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const authResult = validateAuth(request);
@@ -40,12 +118,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (action === 'sleep') {
       updatedAgent = db.updateAgent(params.id, { status: 'sleeping' });
+      if (agent.current_task_id) {
+        await signalWorkflow(params.id, agent.current_task_id, 'sleep');
+      }
     }
 
     if (action === 'stop') {
       const inProgressTasks = db.getAgentTasks(params.id).filter((task) => task.status === 'in_progress');
       for (const task of inProgressTasks) {
         db.updateAgentTask(task.id, { status: 'cancelled', completed_at: now });
+        await signalWorkflow(params.id, task.id, 'cancel');
       }
       updatedAgent = db.updateAgent(params.id, { status: 'offline', current_task_id: null });
     }
@@ -73,6 +155,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         status: 'working',
         current_task_id: blockedTask.id,
       });
+
+      await signalWorkflow(params.id, blockedTask.id, 'unblock');
     }
 
     if (action === 'restart') {
@@ -80,6 +164,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
         status: 'idle',
         current_task_id: null,
       });
+
+      const recentTask = db
+        .getAgentTasks(params.id)
+        .find((task) => task.status === 'in_progress' || task.status === 'blocked' || task.status === 'pending');
+
+      const restartTaskId = generateTaskId();
+      const restartTitle = recentTask?.title || `Restart task for ${agent.name}`;
+      const workflowInput = buildWorkflowInput(
+        agent,
+        restartTaskId,
+        restartTitle,
+        recentTask?.priority,
+        recentTask?.linear_issue_id,
+        recentTask?.project_id
+      );
+
+      await startWorkflow(workflowInput);
     }
 
     eventBus.publish({
