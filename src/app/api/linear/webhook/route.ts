@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { corsHeaders } from '@/lib/auth/middleware';
 import db from '@/lib/db';
 import { eventBus } from '@/lib/events/eventBus';
+import { lifecycleManager } from '@/lib/agents/lifecycle';
 
 type WebhookAction = 'create' | 'update' | 'remove';
 
@@ -11,6 +12,67 @@ type LinearWebhookPayload = {
   action?: WebhookAction;
   data?: Record<string, unknown>;
 };
+
+function normalizeName(value: string | null): string {
+  return (value || '').trim().toLowerCase();
+}
+
+function mapLinearPriority(priority: number): 'high' | 'medium' | 'low' {
+  if (priority >= 3) {
+    return 'high';
+  }
+  if (priority >= 2) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+function isAutoAssignmentState(stateType: string | null, stateName: string | null): boolean {
+  const stateTypeNormalized = normalizeName(stateType);
+  const stateNameNormalized = normalizeName(stateName);
+
+  return (
+    stateTypeNormalized === 'started' ||
+    stateTypeNormalized === 'in_progress' ||
+    stateNameNormalized === 'started' ||
+    stateNameNormalized === 'in progress' ||
+    stateNameNormalized === 'in_progress'
+  );
+}
+
+async function maybeAutoAssignIssue(issueId: string): Promise<void> {
+  const issue = db.getLinearIssue(issueId);
+  if (!issue || issue.agent_task_id) {
+    return;
+  }
+
+  if (!isAutoAssignmentState(issue.state_type, issue.state_name)) {
+    return;
+  }
+
+  const assignee = normalizeName(issue.assignee_name);
+  if (!assignee) {
+    return;
+  }
+
+  const matchedAgent = db.getAllAgents().find((agent) => normalizeName(agent.name) === assignee);
+  if (!matchedAgent) {
+    return;
+  }
+
+  try {
+    await lifecycleManager.assignTask({
+      agentId: matchedAgent.id,
+      taskId: `linear_${issue.id}`,
+      linearIssueId: issue.id,
+      projectId: issue.project_id || undefined,
+      title: issue.title,
+      priority: mapLinearPriority(issue.priority),
+    });
+  } catch (error) {
+    console.error('Auto-assignment from Linear webhook failed:', error);
+  }
+}
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -168,7 +230,8 @@ export async function POST(request: NextRequest) {
           timestamp: Date.now(),
         });
       } else {
-        upsertIssueFromWebhook(data);
+        const issue = upsertIssueFromWebhook(data);
+        await maybeAutoAssignIssue(issue.id);
       }
     } else if (eventType === 'Project') {
       const projectId = toStringOrNull(data.id);
