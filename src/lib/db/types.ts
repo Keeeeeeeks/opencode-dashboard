@@ -179,6 +179,17 @@ export interface AgentTask {
   updated_at: number;
 }
 
+export interface AlertRule {
+  id: string;
+  trigger: 'blocked' | 'completed' | 'error' | 'idle_too_long' | 'stale_task';
+  priority_filter: 'high' | 'medium' | 'low' | 'all';
+  delay_ms: number;
+  channel: 'push' | 'in_app' | 'both';
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface LinearProject {
   id: string;
   name: string;
@@ -297,6 +308,13 @@ export interface DatabaseOperations {
   getAgentTasks(agentId: string): AgentTask[];
   updateAgentTask(id: string, updates: Partial<Omit<AgentTask, 'id' | 'agent_id' | 'created_at'>>): AgentTask;
   deleteAgentTask(id: string): boolean;
+
+  createAlertRule(rule: Omit<AlertRule, 'created_at' | 'updated_at'>): AlertRule;
+  getAlertRule(id: string): AlertRule | null;
+  getAllAlertRules(): AlertRule[];
+  updateAlertRule(id: string, updates: Partial<Omit<AlertRule, 'id' | 'created_at'>>): AlertRule;
+  deleteAlertRule(id: string): boolean;
+  getAlertRulesForTrigger(trigger: string, priority?: string): AlertRule[];
 
   upsertLinearProject(project: LinearProject): LinearProject;
   getLinearProject(id: string): LinearProject | null;

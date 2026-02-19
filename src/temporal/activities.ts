@@ -1,4 +1,5 @@
 import db from '@/lib/db';
+import { alertEngine } from '@/lib/alerts/engine';
 import { eventBus } from '@/lib/events/eventBus';
 import type { AgentTaskWorkflowInput, MonitorResult, NotificationPayload } from './types';
 
@@ -122,37 +123,17 @@ export async function updateDashboard(
 }
 
 export async function sendNotification(payload: NotificationPayload): Promise<void> {
-  const content = buildNotificationMessage(payload);
-
-  db.createMessage({
-    type: payload.type === 'error' ? 'error' : payload.type === 'completed' ? 'task_complete' : 'state_change',
-    content,
-    todo_id: null,
-    session_id: null,
-    read: 0,
-    project_id: payload.projectId || null,
-  });
-
-  eventBus.publish({
-    type: 'message:created',
-    payload: { notification: payload },
-    timestamp: Date.now(),
+  alertEngine.processEvent({
+    trigger: payload.type,
+    agentId: payload.agentId,
+    taskId: payload.taskId,
+    title: payload.title,
+    priority: payload.priority || 'medium',
+    reason: payload.reason,
+    projectId: payload.projectId,
   });
 }
 
-function buildNotificationMessage(payload: NotificationPayload): string {
-  switch (payload.type) {
-    case 'blocked':
-      return `Agent "${payload.agentId}" blocked on "${payload.title}": ${payload.reason || 'Unknown reason'}`;
-    case 'completed':
-      return `Agent "${payload.agentId}" completed "${payload.title}"`;
-    case 'error':
-      return `Agent "${payload.agentId}" error on "${payload.title}": ${payload.reason || 'Unknown error'}`;
-    case 'stale_task':
-      return `Task "${payload.title}" has been blocked for over 2 hours (agent: ${payload.agentId})`;
-    case 'idle_too_long':
-      return `Agent "${payload.agentId}" has been idle for over 30 minutes`;
-    default:
-      return `Agent notification: ${payload.type}`;
-  }
+export async function cancelAlerts(agentId: string, taskId?: string): Promise<number> {
+  return alertEngine.cancelPendingAlerts(agentId, taskId);
 }

@@ -20,7 +20,7 @@ export const progressQuery = defineQuery<{ status: string; taskTitle: string; bl
 );
 
 export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<AgentTaskWorkflowResult> {
-  const { registerAgent, startAgentTask, monitorAgent, updateDashboard, sendNotification } =
+  const { registerAgent, startAgentTask, monitorAgent, updateDashboard, sendNotification, cancelAlerts } =
     proxyActivities<typeof activities>({
       startToCloseTimeout: '10 minutes',
       retry: { maximumAttempts: 3 },
@@ -118,6 +118,7 @@ export async function agentTaskWorkflow(input: AgentTaskWorkflowInput): Promise<
         continue;
       }
 
+      await cancelAlerts(input.agentId, input.taskId);
       await updateDashboard(input.agentId, 'working', input.taskId, 'in_progress');
       currentStatus = 'working';
     }
