@@ -20,21 +20,22 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-test.beforeAll(async () => {
-  api = await request.newContext({
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
-    extraHTTPHeaders: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+if (typeof Bun === 'undefined') {
+  test.beforeAll(async () => {
+    api = await request.newContext({
+      baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
+      extraHTTPHeaders: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
   });
-});
 
-test.afterAll(async () => {
-  await api.dispose();
-});
+  test.afterAll(async () => {
+    await api.dispose();
+  });
 
-test('API: create parent task and subtasks', async () => {
+  test('API: create parent task and subtasks', async () => {
   const idSuffix = runId();
   const parentResponse = await postJson<{ todo: { id: string } }>('/api/todos', {
     id: `todo_e2e_parent_${idSuffix}`,
@@ -65,7 +66,7 @@ test('API: create parent task and subtasks', async () => {
   expect(subtasksResponse.subtasks.every((subtask) => subtask.parent_id === parentId)).toBeTruthy();
 });
 
-test('API: move child to in_progress while parent stays pending', async () => {
+  test('API: move child to in_progress while parent stays pending', async () => {
   const idSuffix = runId();
 
   const parentResponse = await postJson<{ todo: { id: string; content: string; status: string; priority: string } }>(
@@ -108,7 +109,7 @@ test('API: move child to in_progress while parent stays pending', async () => {
   expect(updatedChild?.status).toBe('in_progress');
 });
 
-test('API: add and read comments', async () => {
+  test('API: add and read comments', async () => {
   const idSuffix = runId();
 
   const todoResponse = await postJson<{ todo: { id: string } }>('/api/todos', {
@@ -134,7 +135,7 @@ test('API: add and read comments', async () => {
   expect(targetComment?.author).toBe('playwright');
 });
 
-test('API: create sprint, assign tasks, verify velocity', async () => {
+  test('API: create sprint, assign tasks, verify velocity', async () => {
   const idSuffix = runId();
   const now = Math.floor(Date.now() / 1000);
   const sprintEnd = now + 14 * 24 * 60 * 60;
@@ -199,5 +200,6 @@ test('API: create sprint, assign tasks, verify velocity', async () => {
   expect(velocityResponse.velocity.sprint_id).toBe(sprintId);
   expect(velocityResponse.velocity.total_points).toBe(9);
   expect(velocityResponse.velocity.completed_points).toBe(8);
-  expect(velocityResponse.velocity.daily_progress.length).toBeGreaterThan(0);
-});
+    expect(velocityResponse.velocity.daily_progress.length).toBeGreaterThan(0);
+  });
+}

@@ -311,4 +311,10 @@ async function main() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main();
+const isBunTestRunner =
+  typeof Bun !== 'undefined' &&
+  typeof (Bun as unknown as { jest?: unknown }).jest !== 'undefined';
+
+if (import.meta.main && !isBunTestRunner) {
+  main();
+}
