@@ -20,6 +20,10 @@ export function usePolling() {
     setMessages,
     setSprints,
     setProjects,
+    setAgents,
+    setLinearProjects,
+    setLinearIssues,
+    setLinearWorkflowStates,
     setIsConnected,
     setLastFetchTime,
     currentSessionId,
@@ -50,11 +54,29 @@ export function usePolling() {
         credentials: 'include',
       }).catch(() => null);
 
-      const [todosRes, messagesRes, sprintsRes, projectsRes] = await Promise.all([
+      const agentsRequest = fetch(`${API_BASE}/api/agents`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const linearIssuesRequest = fetch(`${API_BASE}/api/linear/issues`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const linearProjectsRequest = fetch(`${API_BASE}/api/linear/projects`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const [todosRes, messagesRes, sprintsRes, projectsRes, agentsRes, linearIssuesRes, linearProjectsRes] = await Promise.all([
         fetch(`${API_BASE}/api/todos?${todosParams}`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/messages`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/sprints`, { headers: authHeaders() }),
         projectsRequest,
+        agentsRequest,
+        linearIssuesRequest,
+        linearProjectsRequest,
       ]);
 
       if (todosRes.ok) {
@@ -87,6 +109,22 @@ export function usePolling() {
         setProjects(projectsData.projects || []);
       }
 
+      if (agentsRes?.ok) {
+        const agentsData = await agentsRes.json();
+        setAgents(agentsData.agents || []);
+      }
+
+      if (linearIssuesRes?.ok) {
+        const linearIssuesData = await linearIssuesRes.json();
+        setLinearIssues(linearIssuesData.issues || []);
+        setLinearWorkflowStates(linearIssuesData.workflow_states || []);
+      }
+
+      if (linearProjectsRes?.ok) {
+        const linearProjectsData = await linearProjectsRes.json();
+        setLinearProjects(linearProjectsData.projects || []);
+      }
+
       setIsConnected(true);
       setLastFetchTime(Date.now());
     } catch (error) {
@@ -103,6 +141,10 @@ export function usePolling() {
     setMessages,
     setSprints,
     setProjects,
+    setAgents,
+    setLinearProjects,
+    setLinearIssues,
+    setLinearWorkflowStates,
     setIsConnected,
     setLastFetchTime,
   ]);
