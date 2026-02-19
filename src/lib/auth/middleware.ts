@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest } from 'next/server';
 import { auditLog } from '@/lib/audit';
+import db from '@/lib/db';
+import { hashToken, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 
 const DEFAULT_ALLOWED_ORIGINS = 'http://127.0.0.1:3000,http://localhost:3000';
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -8,9 +10,17 @@ const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60;
 
 const rateLimitBuckets = new Map<string, number[]>();
 
-type AuthValidationResult = {
+type AuthUser = {
+  id: number;
+  username: string;
+  role: 'owner' | 'admin' | 'viewer';
+};
+
+export type AuthValidationResult = {
   valid: boolean;
   error?: string;
+  authType?: 'api_key' | 'session';
+  user?: AuthUser | null;
 };
 
 type RateLimitResult = {
@@ -54,37 +64,102 @@ function extractClientIp(request: NextRequest): string {
   return requestWithIp.ip || 'unknown';
 }
 
+function getSessionAuthResult(token: string): AuthValidationResult {
+  const session = db.getAuthSessionByTokenHash(hashToken(token));
+  if (!session) {
+    return { valid: false, error: 'Invalid session token' };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (session.expires_at <= now) {
+    db.deleteAuthSession(session.id);
+    return { valid: false, error: 'Session expired' };
+  }
+
+  const user = db.getUserById(session.user_id);
+  if (!user) {
+    db.deleteAuthSession(session.id);
+    return { valid: false, error: 'Session user not found' };
+  }
+
+  return {
+    valid: true,
+    authType: 'session',
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    },
+  };
+}
+
 export function validateAuth(request: NextRequest): AuthValidationResult {
   const path = request.nextUrl.pathname;
   const ip = extractClientIp(request);
   const authHeader = request.headers.get('authorization');
   const expectedToken = process.env.DASHBOARD_API_KEY;
 
-  if (!expectedToken) {
-    auditLog('auth_failure', { ip, path, reason: 'missing_server_api_key' });
-    return { valid: false, error: 'Missing server API key configuration' };
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const providedToken = authHeader.slice('Bearer '.length);
+
+    if (expectedToken) {
+      const providedBuffer = Buffer.from(providedToken);
+      const expectedBuffer = Buffer.from(expectedToken);
+
+      const isApiKeyMatch =
+        providedBuffer.length === expectedBuffer.length &&
+        timingSafeEqual(providedBuffer, expectedBuffer);
+
+      if (isApiKeyMatch) {
+        auditLog('auth_success', { path, auth_type: 'api_key' });
+        return { valid: true, authType: 'api_key', user: null };
+      }
+    }
+
+    const sessionResult = getSessionAuthResult(providedToken);
+    if (sessionResult.valid) {
+      auditLog('auth_success', { path, auth_type: 'session', user_id: sessionResult.user?.id });
+      return sessionResult;
+    }
+
+    auditLog('auth_failure', { ip, path, reason: 'invalid_bearer_token' });
+    return { valid: false, error: 'Invalid API key or session token' };
   }
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    auditLog('auth_failure', { ip, path, reason: 'missing_or_invalid_authorization_header' });
-    return { valid: false, error: 'Missing or invalid Authorization header' };
+  const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (sessionToken) {
+    const sessionResult = getSessionAuthResult(sessionToken);
+    if (sessionResult.valid) {
+      auditLog('auth_success', { path, auth_type: 'session', user_id: sessionResult.user?.id });
+      return sessionResult;
+    }
   }
 
-  const providedToken = authHeader.slice('Bearer '.length);
-  const providedBuffer = Buffer.from(providedToken);
-  const expectedBuffer = Buffer.from(expectedToken);
+  auditLog('auth_failure', { ip, path, reason: 'missing_auth_credentials' });
+  return { valid: false, error: 'Missing auth credentials' };
+}
 
-  const isMatch =
-    providedBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(providedBuffer, expectedBuffer);
-
-  if (!isMatch) {
-    auditLog('auth_failure', { ip, path, reason: 'invalid_api_key' });
-    return { valid: false, error: 'Invalid API key' };
+export function requireRole(
+  authResult: AuthValidationResult,
+  minRole: 'viewer' | 'admin' | 'owner'
+): { allowed: boolean; error?: string } {
+  if (authResult.authType === 'api_key') {
+    return { allowed: true };
   }
 
-  auditLog('auth_success', { path });
-  return { valid: true };
+  if (!authResult.user) {
+    return { allowed: false, error: 'No user context' };
+  }
+
+  const roleHierarchy = { viewer: 0, admin: 1, owner: 2 };
+  const userLevel = roleHierarchy[authResult.user.role] ?? -1;
+  const requiredLevel = roleHierarchy[minRole] ?? 0;
+
+  if (userLevel >= requiredLevel) {
+    return { allowed: true };
+  }
+
+  return { allowed: false, error: `Requires ${minRole} role` };
 }
 
 export function corsHeaders(request: NextRequest): HeadersInit {

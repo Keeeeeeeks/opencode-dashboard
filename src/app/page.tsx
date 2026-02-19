@@ -14,6 +14,7 @@ import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
 import type { Todo } from '@/components/kanban/types';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export default function Dashboard() {
   const { todos, messages, sprints, activeSprint, setActiveSprint, isConnected } = useDashboardStore();
@@ -76,15 +77,16 @@ export default function Dashboard() {
   const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <header
-        className="sticky top-0 z-50 border-b backdrop-blur-xl"
-        style={{
-          background: 'var(--chrome)',
-          borderColor: 'var(--border)',
-          height: 56,
-        }}
-      >
+    <AuthGuard>
+      <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+        <header
+          className="sticky top-0 z-50 border-b backdrop-blur-xl"
+          style={{
+            background: 'var(--chrome)',
+            borderColor: 'var(--border)',
+            height: 56,
+          }}
+        >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between">
             <div className="flex items-center gap-3">
@@ -222,10 +224,10 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </header>
+        </header>
 
-      <main className="mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8 py-6 animate-dashboard-enter">
-        <div className="flex flex-col md:flex-row gap-6">
+        <main className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
+          <div className="flex flex-col gap-6 md:flex-row">
           <div className="flex-1 min-w-0">
             <div className="mb-4 flex items-start justify-between">
               <div>
@@ -322,14 +324,15 @@ export default function Dashboard() {
             />
           )}
         </div>
-      </main>
+        </main>
 
-      <TaskDetailModal
-        todo={selectedTodo}
-        open={selectedTodo !== null}
-        onClose={() => setSelectedTodo(null)}
-        onStatusChange={handleStatusChange}
-      />
-    </div>
+        <TaskDetailModal
+          todo={selectedTodo}
+          open={selectedTodo !== null}
+          onClose={() => setSelectedTodo(null)}
+          onStatusChange={handleStatusChange}
+        />
+      </div>
+    </AuthGuard>
   );
 }

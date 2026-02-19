@@ -9,6 +9,7 @@ import { BarChart } from '@/components/analytics/BarChart';
 import { DonutChart } from '@/components/analytics/DonutChart';
 import { HorizontalBarChart } from '@/components/analytics/HorizontalBarChart';
 import { LineChart } from '@/components/analytics/LineChart';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
@@ -258,15 +259,16 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <header
-        className="sticky top-0 z-50 border-b backdrop-blur-xl"
-        style={{
-          background: 'var(--chrome)',
-          borderColor: 'var(--border)',
-          height: 56,
-        }}
-      >
+    <AuthGuard>
+      <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+        <header
+          className="sticky top-0 z-50 border-b backdrop-blur-xl"
+          style={{
+            background: 'var(--chrome)',
+            borderColor: 'var(--border)',
+            height: 56,
+          }}
+        >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -308,9 +310,9 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </div>
-      </header>
+        </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
         <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -596,7 +598,8 @@ export default function AnalyticsPage() {
             </div>
           ) : null}
         </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </AuthGuard>
   );
 }
