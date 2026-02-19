@@ -11,6 +11,7 @@
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY || '';
+const PROJECT_ID = process.env.PROJECT_ID || '';
 
 function getAuthHeaders(): Record<string, string> {
   return {
@@ -29,6 +30,7 @@ interface Todo {
 interface HookContext {
   sessionId?: string;
   agentName?: string;
+  project?: string;
   todos?: Todo[];
 }
 
@@ -43,6 +45,7 @@ async function sendEvent(type: EventType, payload: Record<string, unknown>, sess
         type,
         payload,
         sessionId,
+        project: PROJECT_ID || undefined,
       }),
     });
 
@@ -67,6 +70,7 @@ async function syncTodos(todos: Todo[], sessionId?: string, agentName?: string) 
           priority: todo.priority,
           session_id: sessionId,
           agent: agentName,
+          project: PROJECT_ID || undefined,
         })),
       }),
     });
@@ -90,6 +94,7 @@ async function syncTodos(todos: Todo[], sessionId?: string, agentName?: string) 
           priority: todo.priority,
           session_id: sessionId,
           agent: agentName,
+          project: PROJECT_ID || undefined,
         }),
       });
     }
@@ -144,6 +149,7 @@ export const dashboardHook = {
         body: JSON.stringify({
           id: sessionId,
           name: `Session ${new Date().toLocaleString()}`,
+          project: PROJECT_ID || undefined,
         }),
       });
     } catch (error) {
@@ -163,6 +169,7 @@ export const dashboardHook = {
           type: 'worklog',
           content: summary,
           session_id: context.sessionId || null,
+          project: PROJECT_ID || undefined,
           metadata: {
             author: context.agentName || 'unknown',
             tags: context.tags || [],

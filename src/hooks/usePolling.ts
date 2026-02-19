@@ -20,10 +20,12 @@ export function usePolling() {
     setTodos,
     setMessages,
     setSprints,
+    setProjects,
     setIsConnected,
     setLastFetchTime,
     currentSessionId,
     activeSprint,
+    selectedProject,
   } = useDashboardStore();
 
   const isPollingRef = useRef(false);
@@ -41,11 +43,20 @@ export function usePolling() {
       if (activeSprint) {
         todosParams.set('sprint_id', activeSprint);
       }
+      if (selectedProject) {
+        todosParams.set('project', selectedProject);
+      }
 
-      const [todosRes, messagesRes, sprintsRes] = await Promise.all([
+      const projectsRequest = fetch(`${API_BASE}/api/settings/projects`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      }).catch(() => null);
+
+      const [todosRes, messagesRes, sprintsRes, projectsRes] = await Promise.all([
         fetch(`${API_BASE}/api/todos?${todosParams}`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/messages`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/sprints`, { headers: authHeaders() }),
+        projectsRequest,
       ]);
 
       if (todosRes.ok) {
@@ -55,12 +66,27 @@ export function usePolling() {
 
       if (messagesRes.ok) {
         const messagesData = await messagesRes.json();
-        setMessages(messagesData.messages || []);
+        const messages = messagesData.messages || [];
+        setMessages(
+          selectedProject
+            ? messages.filter((message: { project_id?: string | null }) => message.project_id === selectedProject)
+            : messages
+        );
       }
 
       if (sprintsRes.ok) {
         const sprintsData = await sprintsRes.json();
-        setSprints(sprintsData.sprints || []);
+        const sprints = sprintsData.sprints || [];
+        setSprints(
+          selectedProject
+            ? sprints.filter((sprint: { project_id?: string | null }) => sprint.project_id === selectedProject)
+            : sprints
+        );
+      }
+
+      if (projectsRes?.ok) {
+        const projectsData = await projectsRes.json();
+        setProjects(projectsData.projects || []);
       }
 
       setIsConnected(true);
@@ -71,7 +97,17 @@ export function usePolling() {
     } finally {
       isPollingRef.current = false;
     }
-  }, [activeSprint, currentSessionId, setTodos, setMessages, setSprints, setIsConnected, setLastFetchTime]);
+  }, [
+    activeSprint,
+    currentSessionId,
+    selectedProject,
+    setTodos,
+    setMessages,
+    setSprints,
+    setProjects,
+    setIsConnected,
+    setLastFetchTime,
+  ]);
 
   useEffect(() => {
     fetchData();
