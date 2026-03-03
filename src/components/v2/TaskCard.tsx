@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, ListChecks, Link2, User } from 'lucide-react';
+import { GripVertical, ListChecks, Link2, User, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TaskCardProps } from './types';
 
@@ -12,6 +12,26 @@ const priorityStyles = {
   medium: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
   low: { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' },
 } as const;
+
+const statusColors: Record<string, string> = {
+  pending: '#71717a',
+  in_progress: '#3b82f6',
+  blocked: '#f59e0b',
+  review: '#14b8a6',
+  done: '#22c55e',
+  deferred: '#64748b',
+  cancelled: '#ef4444',
+};
+
+const statusOrder: string[] = [
+  'pending',
+  'in_progress',
+  'blocked',
+  'review',
+  'done',
+  'deferred',
+  'cancelled',
+];
 
 function dependencyCount(rawDependencies: string | null): number {
   if (!rawDependencies) {
@@ -26,7 +46,9 @@ function dependencyCount(rawDependencies: string | null): number {
   }
 }
 
-export function TaskCard({ task, subtasks, onClick, isDragging }: TaskCardProps) {
+export function TaskCard({ task, subtasks, onClick, onStatusChange, isDragging }: TaskCardProps) {
+  const [statusOpen, setStatusOpen] = useState(false);
+  const statusRef = useRef<HTMLDivElement>(null);
   const {
     attributes,
     listeners,
@@ -46,6 +68,27 @@ export function TaskCard({ task, subtasks, onClick, isDragging }: TaskCardProps)
   const doneSubtasks = useMemo(
     () => subtasks.filter((subtask) => subtask.status === 'done').length,
     [subtasks]
+  );
+
+  const handleStatusClick = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (onStatusChange) {
+        setStatusOpen((prev) => !prev);
+      }
+    },
+    [onStatusChange]
+  );
+
+  const handleStatusSelect = useCallback(
+    (event: React.MouseEvent, newStatus: string) => {
+      event.stopPropagation();
+      if (onStatusChange && newStatus !== task.status) {
+        onStatusChange(task.id, newStatus as typeof task.status);
+      }
+      setStatusOpen(false);
+    },
+    [onStatusChange, task.id, task.status]
   );
 
   return (
@@ -93,6 +136,55 @@ export function TaskCard({ task, subtasks, onClick, isDragging }: TaskCardProps)
           </p>
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="relative" ref={statusRef}>
+              <button
+                type="button"
+                onClick={handleStatusClick}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium cursor-pointer transition-opacity hover:opacity-80"
+                style={{
+                  background: `${statusColors[task.status] ?? '#71717a'}20`,
+                  color: statusColors[task.status] ?? '#71717a',
+                }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: statusColors[task.status] ?? '#71717a' }}
+                />
+                {task.status}
+                {onStatusChange && <ChevronDown className="h-3 w-3" />}
+              </button>
+
+              {statusOpen && (
+                <div
+                  className="absolute left-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border py-1"
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    borderColor: 'var(--border)',
+                    boxShadow: 'var(--shadow-lg)',
+                  }}
+                >
+                  {statusOrder.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={(event) => handleStatusSelect(event, s)}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
+                        s === task.status && 'font-semibold'
+                      )}
+                      style={{ color: s === task.status ? statusColors[s] : 'var(--text)' }}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ background: statusColors[s] }}
+                      />
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <span
               className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
               style={{

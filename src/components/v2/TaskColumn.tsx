@@ -24,7 +24,7 @@ const statusLabels: Record<BoardStatus, string> = {
   done: 'Done',
 };
 
-export function TaskColumn({ status, tasks, subtasks, onSelectTask }: TaskColumnProps) {
+export function TaskColumn({ status, tasks, subtasks, onSelectTask, onStatusChange }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const [collapsed, setCollapsed] = useState(false);
 
@@ -84,6 +84,7 @@ export function TaskColumn({ status, tasks, subtasks, onSelectTask }: TaskColumn
                   task={task}
                   subtasks={subtasks[task.id] || []}
                   onClick={onSelectTask}
+                  onStatusChange={onStatusChange}
                 />
               ))
             )}

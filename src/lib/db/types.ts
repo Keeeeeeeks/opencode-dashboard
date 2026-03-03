@@ -64,6 +64,7 @@ export interface Task {
   assigned_agent_id: string | null;
   linear_issue_id: string | null;
   project_id?: string | null;
+  sprint_id?: string | null;
   /** Distinguishes v1 legacy todos from native v2 tasks */
   source?: 'v1' | 'v2';
   /** Original V1 todo string ID (only present when source === 'v1') */

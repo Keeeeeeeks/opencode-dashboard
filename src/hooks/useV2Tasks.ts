@@ -35,6 +35,8 @@ interface UpdateTaskData extends Partial<CreateTaskData> {
   complexity_score?: number | null;
   assigned_agent_id?: string | null;
   linear_issue_id?: string | null;
+  sprint_id?: string | null;
+  project_id?: string | null;
 }
 
 interface CreateSubtaskData {

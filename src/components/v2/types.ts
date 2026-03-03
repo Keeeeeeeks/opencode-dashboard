@@ -1,4 +1,4 @@
-import type { Task as DbTask, Subtask as DbSubtask } from '@/lib/db/types';
+import type { Task as DbTask, Subtask as DbSubtask, Sprint, Agent, Project } from '@/lib/db/types';
 
 export type V2Task = DbTask & {
   source?: 'v1' | 'v2';
@@ -23,12 +23,14 @@ export interface TaskColumnProps {
   tasks: V2Task[];
   subtasks: Record<number, Subtask[]>;
   onSelectTask: (task: V2Task) => void;
+  onStatusChange?: (id: number, status: V2Task['status']) => void;
 }
 
 export interface TaskCardProps {
   task: V2Task;
   subtasks: Subtask[];
   onClick: (task: V2Task) => void;
+  onStatusChange?: (id: number, status: V2Task['status']) => void;
   isDragging?: boolean;
 }
 
@@ -51,6 +53,9 @@ export interface TaskDetailModalProps {
   task: V2Task | null;
   tasks: V2Task[];
   subtasks: Subtask[];
+  sprints: Sprint[];
+  projects: Project[];
+  agents: Pick<Agent, 'id' | 'name' | 'status'>[];
   onClose: () => void;
   onSave: (taskId: number, updates: Partial<V2Task>) => Promise<void>;
   onDelete: (taskId: number, originalId?: string) => Promise<void>;

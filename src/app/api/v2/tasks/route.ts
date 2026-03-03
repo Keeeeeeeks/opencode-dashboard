@@ -34,6 +34,7 @@ const CreateTaskSchema = z.object({
   complexity_score: z.number().nullable().optional(),
   assigned_agent_id: z.string().nullable().optional(),
   linear_issue_id: z.string().nullable().optional(),
+  sprint_id: z.string().nullable().optional(),
 });
 
 const UpdateTaskSchema = CreateTaskSchema.partial().extend({
@@ -186,6 +187,7 @@ export async function POST(request: NextRequest) {
       complexity_score: data.complexity_score ?? null,
       assigned_agent_id: data.assigned_agent_id ?? null,
       linear_issue_id: data.linear_issue_id ?? null,
+      sprint_id: data.sprint_id ?? null,
     });
 
     return NextResponse.json(
@@ -268,6 +270,7 @@ export async function PUT(request: NextRequest) {
       ...(data.complexity_score !== undefined ? { complexity_score: data.complexity_score } : {}),
       ...(data.assigned_agent_id !== undefined ? { assigned_agent_id: data.assigned_agent_id } : {}),
       ...(data.linear_issue_id !== undefined ? { linear_issue_id: data.linear_issue_id } : {}),
+      ...(data.sprint_id !== undefined ? { sprint_id: data.sprint_id } : {}),
     };
 
     const task = db.updateTask(data.id, updates);

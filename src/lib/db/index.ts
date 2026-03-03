@@ -315,6 +315,9 @@ function initializeDatabase(): Database.Database {
   if (!taskColumns.some((c) => c.name === 'project_id')) {
     db.exec('ALTER TABLE tasks ADD COLUMN project_id TEXT');
   }
+  if (!taskColumns.some((c) => c.name === 'sprint_id')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN sprint_id TEXT');
+  }
 
   const sprintColumns = db.prepare('PRAGMA table_info(sprints)').all() as Array<{ name: string }>;
   if (!sprintColumns.some((c) => c.name === 'project_id')) {
@@ -1282,10 +1285,11 @@ const db: DatabaseOperations = {
         assigned_agent_id,
         linear_issue_id,
         project_id,
+        sprint_id,
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -1301,6 +1305,7 @@ const db: DatabaseOperations = {
       task.assigned_agent_id,
       task.linear_issue_id,
       task.project_id ?? null,
+      task.sprint_id ?? null,
       now,
       now
     );
@@ -1356,6 +1361,7 @@ const db: DatabaseOperations = {
         assigned_agent_id = ?,
         linear_issue_id = ?,
         project_id = ?,
+        sprint_id = ?,
         updated_at = ?
       WHERE id = ?
     `);
@@ -1373,6 +1379,7 @@ const db: DatabaseOperations = {
       updated.assigned_agent_id,
       updated.linear_issue_id,
       updated.project_id ?? null,
+      updated.sprint_id ?? null,
       now,
       id
     );

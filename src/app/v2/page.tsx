@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Moon, Sun, Menu, X, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useV2TasksStore } from '@/stores/v2Tasks';
 import { useV2Tasks } from '@/hooks/useV2Tasks';
+import type { Sprint, Agent, Project } from '@/lib/db/types';
 import {
   TaskBoard,
   TagSwitcher,
@@ -43,11 +44,48 @@ export default function V2DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [agents, setAgents] = useState<Pick<Agent, 'id' | 'name' | 'status'>[]>([]);
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
     setIsDark(!hasLight);
   }, []);
+
+  const fetchDropdownData = useCallback(async () => {
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+    const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
+
+    const [sprintsRes, agentsRes] = await Promise.allSettled([
+      fetch(`${API_BASE}/api/sprints`, { headers }),
+      fetch(`${API_BASE}/api/agents`, { headers }),
+    ]);
+
+    if (sprintsRes.status === 'fulfilled' && sprintsRes.value.ok) {
+      const data = (await sprintsRes.value.json()) as { sprints: Sprint[] };
+      setSprints(data.sprints || []);
+    }
+    if (agentsRes.status === 'fulfilled' && agentsRes.value.ok) {
+      const data = (await agentsRes.value.json()) as { agents: Pick<Agent, 'id' | 'name' | 'status'>[] };
+      setAgents(data.agents || []);
+    }
+
+    // Derive projects from task tags (no separate projects API used by v2)
+    const projectSet = new Map<string, Project>();
+    for (const task of tasks) {
+      if (task.project_id) {
+        projectSet.set(task.project_id, { id: task.project_id, name: task.project_id, description: null, color: null, created_at: 0 });
+      }
+    }
+    setProjects(Array.from(projectSet.values()));
+  }, [tasks]);
+
+  useEffect(() => {
+    fetchDropdownData();
+  }, [fetchDropdownData]);
 
   useEffect(() => {
     const missingSubtasks = tasks.filter((task) => task.source !== 'v1' && subtasks[task.id] === undefined);
@@ -238,6 +276,9 @@ export default function V2DashboardPage() {
         task={selectedTask}
         tasks={tasks}
         subtasks={selectedTask ? subtasks[selectedTask.id] || [] : []}
+        sprints={sprints}
+        projects={projects}
+        agents={agents}
         onClose={() => setSelectedTask(null)}
         onSave={async (taskId, updates) => {
           const task = tasks.find((item) => item.id === taskId);

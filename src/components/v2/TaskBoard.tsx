@@ -108,6 +108,7 @@ export function TaskBoard({ tasks, subtasks, onStatusChange, onSelectTask, isLoa
             tasks={tasks.filter((task) => task.status === status)}
             subtasks={subtasks}
             onSelectTask={onSelectTask}
+            onStatusChange={onStatusChange}
           />
         ))}
       </div>
