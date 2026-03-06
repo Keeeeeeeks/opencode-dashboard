@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('tasks');
+  const hasAutoSelectedSprint = useRef(false);
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
@@ -56,6 +57,17 @@ export default function Dashboard() {
     const projectFromUrl = params.get('project');
     setSelectedProject(projectFromUrl || null);
   }, [setSelectedProject]);
+
+  useEffect(() => {
+    if (hasAutoSelectedSprint.current || sprints.length === 0) return;
+    hasAutoSelectedSprint.current = true;
+
+    const now = Math.floor(Date.now() / 1000);
+    const active = sprints.find(
+      (s) => s.status === 'active' && s.start_date <= now && now <= s.end_date
+    );
+    setActiveSprint((active ?? sprints[0]).id);
+  }, [sprints, setActiveSprint]);
 
   useEffect(() => {
     try {
