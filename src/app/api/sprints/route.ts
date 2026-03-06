@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    db.rotateSprintIfNeeded();
     const sprints = db.getAllSprints();
     return NextResponse.json({ sprints }, { status: 200, headers: corsHeaders(request) });
   } catch (error) {

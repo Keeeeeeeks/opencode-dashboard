@@ -278,6 +278,11 @@ export async function PUT(request: NextRequest) {
           });
           if (todoData.sprint_id) {
             db.assignTodoToSprint(todoData.id, todoData.sprint_id);
+          } else {
+            const activeSprint = db.getActiveSprint();
+            if (activeSprint) {
+              db.assignTodoToSprint(todoData.id, activeSprint.id);
+            }
           }
         results.push({ id: todoData.id, action: 'created' });
       }

@@ -270,6 +270,7 @@ export interface DatabaseOperations {
   getTodoSprintMap(): Map<string, Array<{ id: string; name: string }>>;
   getSprintVelocity(sprintId: string): SprintVelocity;
   getActiveSprint(): Sprint | null;
+  rotateSprintIfNeeded(): Sprint | null;
   getUnreviewedEndedSprints(): Sprint[];
 
   // Message operations

@@ -920,6 +920,37 @@ const db: DatabaseOperations = {
     return activeSprints.find((sprint) => sprint.start_date <= now && now <= sprint.end_date) ?? null;
   },
 
+  rotateSprintIfNeeded(): Sprint | null {
+    const active = db.getActiveSprint();
+    if (active) return active;
+
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare('SELECT * FROM sprints ORDER BY end_date DESC, created_at DESC LIMIT 1');
+    const latest = stmt.get() as Sprint | undefined;
+
+    if (!latest || latest.end_date >= now) return null;
+
+    const duration = latest.end_date - latest.start_date;
+    const sprintNumber = (() => {
+      const match = latest.name.match(/(\d+)/);
+      return match ? parseInt(match[1], 10) + 1 : 1;
+    })();
+
+    const newSprint = db.createSprint({
+      id: `sprint_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      name: `Sprint ${sprintNumber}`,
+      start_date: latest.end_date,
+      end_date: latest.end_date + duration,
+      goal: null,
+      status: 'active',
+      reviewed_at: null,
+      project_id: latest.project_id,
+    });
+
+    return newSprint;
+  },
+
   getUnreviewedEndedSprints(): Sprint[] {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
