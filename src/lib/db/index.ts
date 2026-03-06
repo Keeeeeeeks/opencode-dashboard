@@ -235,6 +235,7 @@ function initializeDatabase(): Database.Database {
       end_date INTEGER NOT NULL,
       goal TEXT,
       status TEXT DEFAULT 'planning',
+      reviewed_at INTEGER,
       project_id TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
       updated_at INTEGER DEFAULT (unixepoch())
@@ -325,6 +326,9 @@ function initializeDatabase(): Database.Database {
   const sprintColumns = db.prepare('PRAGMA table_info(sprints)').all() as Array<{ name: string }>;
   if (!sprintColumns.some((c) => c.name === 'project_id')) {
     db.exec('ALTER TABLE sprints ADD COLUMN project_id TEXT');
+  }
+  if (!sprintColumns.some((c) => c.name === 'reviewed_at')) {
+    db.exec('ALTER TABLE sprints ADD COLUMN reviewed_at INTEGER');
   }
 
   const todoCommentColumns = db.prepare('PRAGMA table_info(todo_comments)').all() as Array<{ name: string }>;
@@ -710,8 +714,8 @@ const db: DatabaseOperations = {
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO sprints (id, name, start_date, end_date, goal, status, project_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sprints (id, name, start_date, end_date, goal, status, reviewed_at, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -721,6 +725,7 @@ const db: DatabaseOperations = {
       sprint.end_date,
       sprint.goal,
       sprint.status,
+      sprint.reviewed_at,
       sprint.project_id ?? null,
       now,
       now
@@ -758,11 +763,21 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE sprints
-      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, project_id = ?, updated_at = ?
+      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, reviewed_at = ?, project_id = ?, updated_at = ?
       WHERE id = ?
     `);
 
-    stmt.run(updated.name, updated.start_date, updated.end_date, updated.goal, updated.status, updated.project_id ?? null, now, id);
+    stmt.run(
+      updated.name,
+      updated.start_date,
+      updated.end_date,
+      updated.goal,
+      updated.status,
+      updated.reviewed_at,
+      updated.project_id ?? null,
+      now,
+      id
+    );
 
     return updated;
   },
@@ -903,6 +918,18 @@ const db: DatabaseOperations = {
     const activeSprints = stmt.all('active') as Sprint[];
 
     return activeSprints.find((sprint) => sprint.start_date <= now && now <= sprint.end_date) ?? null;
+  },
+
+  getUnreviewedEndedSprints(): Sprint[] {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare(`
+      SELECT *
+      FROM sprints
+      WHERE status = 'active' AND end_date < ? AND reviewed_at IS NULL
+      ORDER BY end_date DESC, created_at DESC
+    `);
+    return stmt.all(now) as Sprint[];
   },
 
   createMessage(message: Omit<Message, 'id' | 'created_at'>): Message {

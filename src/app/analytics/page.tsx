@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Moon, Sun } from 'lucide-react';
+import { CheckCircle2, Moon, Sun } from 'lucide-react';
 import { subDays } from 'date-fns';
 import type { Sprint } from '@/lib/db/types';
 import { BarChart } from '@/components/analytics/BarChart';
@@ -10,6 +10,7 @@ import { DonutChart } from '@/components/analytics/DonutChart';
 import { HorizontalBarChart } from '@/components/analytics/HorizontalBarChart';
 import { LineChart } from '@/components/analytics/LineChart';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { Toast } from '@/components/ui/Toast';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
@@ -97,16 +98,35 @@ export default function AnalyticsPage() {
   const [selectedSprint, setSelectedSprint] = useState('');
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewSprintId, setReviewSprintId] = useState<string | null>(null);
+  const [reviewToastVisible, setReviewToastVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
+  const reviewMarkedSprintRef = useRef<string | null>(null);
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
     setIsDark(!hasLight);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sprintId = params.get('sprint_id');
+    const shouldReview = params.get('review') === 'true';
+
+    if (sprintId) {
+      setSelectedSprint(sprintId);
+    }
+
+    if (shouldReview && sprintId) {
+      setReviewMode(true);
+      setReviewSprintId(sprintId);
+    }
   }, []);
 
   useEffect(() => {
@@ -229,6 +249,52 @@ export default function AnalyticsPage() {
     };
   }, [period.end, period.start, selectedAgent, selectedProject, selectedSprint]);
 
+  useEffect(() => {
+    if (!reviewMode || !reviewSprintId || reviewMarkedSprintRef.current === reviewSprintId) {
+      return;
+    }
+
+    let canceled = false;
+    const targetSprintId = reviewSprintId;
+
+    async function markSprintAsReviewed() {
+      try {
+        const response = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(targetSprintId)}`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            reviewed_at: Math.floor(Date.now() / 1000),
+            status: 'completed',
+          }),
+        });
+
+        if (!response.ok || canceled) {
+          return;
+        }
+
+        const payload = (await response.json()) as { sprint: Sprint };
+        if (canceled) {
+          return;
+        }
+
+        reviewMarkedSprintRef.current = targetSprintId;
+        if (payload.sprint) {
+          setSprints((prev) => prev.map((sprint) => (sprint.id === payload.sprint.id ? payload.sprint : sprint)));
+        }
+        setReviewToastVisible(true);
+        window.setTimeout(() => setReviewToastVisible(false), 2200);
+      } catch (error) {
+        console.error('Failed to mark sprint as reviewed:', error);
+      }
+    }
+
+    void markSprintAsReviewed();
+
+    return () => {
+      canceled = true;
+    };
+  }, [reviewMode, reviewSprintId]);
+
   const summary = useMemo(() => {
     if (!analytics) {
       return {
@@ -257,6 +323,17 @@ export default function AnalyticsPage() {
     document.documentElement.classList.toggle('light');
     setIsDark(!isDark);
   };
+
+  const reviewSprint = useMemo(() => {
+    if (!reviewMode) {
+      return null;
+    }
+    const targetId = reviewSprintId || selectedSprint;
+    if (!targetId) {
+      return null;
+    }
+    return sprints.find((sprint) => sprint.id === targetId) ?? null;
+  }, [reviewMode, reviewSprintId, selectedSprint, sprints]);
 
   return (
     <AuthGuard>
@@ -304,7 +381,7 @@ export default function AnalyticsPage() {
                 Back to Dashboard
               </Link>
 
-              <button onClick={toggleDark} className="rounded-lg p-2 transition-colors" style={{ color: 'var(--muted)' }}>
+              <button type="button" onClick={toggleDark} className="rounded-lg p-2 transition-colors" style={{ color: 'var(--muted)' }}>
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
             </div>
@@ -313,9 +390,28 @@ export default function AnalyticsPage() {
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
+        {reviewMode ? (
+          <div
+            className="mb-5 rounded-lg border px-4 py-3"
+            style={{
+              background: 'linear-gradient(90deg, rgba(251, 191, 36, 0.1), rgba(217, 119, 6, 0.12))',
+              borderColor: 'rgba(217, 119, 6, 0.4)',
+            }}
+          >
+            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#fbbf24' }}>
+              <CheckCircle2 className="h-4 w-4" />
+              Sprint Review: {reviewSprint?.name ?? reviewSprintId ?? selectedSprint}
+            </div>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text)' }}>
+              This sprint is in review mode and is being finalized as completed.
+            </p>
+          </div>
+        ) : null}
+
         <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={() => setPreset('7d')}
               className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
               style={{
@@ -327,6 +423,7 @@ export default function AnalyticsPage() {
               Last 7 days
             </button>
             <button
+              type="button"
               onClick={() => setPreset('30d')}
               className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
               style={{
@@ -338,6 +435,7 @@ export default function AnalyticsPage() {
               Last 30 days
             </button>
             <button
+              type="button"
               onClick={() => setPreset('90d')}
               className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
               style={{
@@ -349,6 +447,7 @@ export default function AnalyticsPage() {
               Last 90 days
             </button>
             <button
+              type="button"
               onClick={() => setPreset('custom')}
               className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
               style={{
@@ -427,7 +526,9 @@ export default function AnalyticsPage() {
 
         <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           {loading ? (
-            Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-24 rounded-xl animate-skeleton" />)
+            ['skeleton-total', 'skeleton-completed', 'skeleton-cycle', 'skeleton-lead', 'skeleton-rate'].map((key) => (
+              <div key={key} className="h-24 rounded-xl animate-skeleton" />
+            ))
           ) : (
             <>
               <div className="rounded-xl border p-4" style={{ background: 'var(--card)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-sm)' }}>
@@ -599,6 +700,8 @@ export default function AnalyticsPage() {
           ) : null}
         </div>
         </main>
+
+        <Toast show={reviewToastVisible} message="Sprint marked as reviewed" />
       </div>
     </AuthGuard>
   );

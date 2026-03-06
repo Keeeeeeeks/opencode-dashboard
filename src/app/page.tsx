@@ -15,12 +15,25 @@ import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
 import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
+import { SprintReviewBanner } from '@/components/sprints/SprintReviewBanner';
 import { AgentPanel } from '@/components/agents';
 import { LinearBoard } from '@/components/linear';
 import type { Todo } from '@/components/kanban/types';
+import type { Sprint } from '@/lib/db/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 
 type DashboardTab = 'tasks' | 'agents' | 'linear';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
+
+function authHeaders(): HeadersInit {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (API_KEY) {
+    headers.Authorization = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
@@ -46,6 +59,7 @@ export default function Dashboard() {
   const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('tasks');
+  const [reviewSprints, setReviewSprints] = useState<Sprint[]>([]);
   const hasAutoSelectedSprint = useRef(false);
 
   useEffect(() => {
@@ -69,6 +83,38 @@ export default function Dashboard() {
     );
     setActiveSprint((active ?? sprints[0]).id);
   }, [sprints, setActiveSprint]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function fetchSprintsNeedingReview() {
+      try {
+        const response = await fetch(`${API_BASE}/api/sprints/needs-review`, {
+          headers: authHeaders(),
+        });
+        if (!response.ok || canceled) {
+          return;
+        }
+        const payload = (await response.json()) as { sprints: Sprint[] };
+        if (canceled) {
+          return;
+        }
+        const unreviewed = payload.sprints ?? [];
+        setReviewSprints(
+          unreviewed
+            .slice()
+            .sort((a, b) => (b.end_date !== a.end_date ? b.end_date - a.end_date : b.created_at - a.created_at))
+        );
+      } catch (error) {
+        console.error('Failed to load unreviewed ended sprints:', error);
+      }
+    }
+
+    void fetchSprintsNeedingReview();
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -355,6 +401,8 @@ export default function Dashboard() {
           </div>
         </div>
         </header>
+
+        {reviewSprints.length > 0 ? <SprintReviewBanner sprint={reviewSprints[0]} /> : null}
 
         <main className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
           <div className="flex flex-col gap-6 md:flex-row">

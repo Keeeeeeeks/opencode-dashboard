@@ -14,6 +14,7 @@ const UpdateSprintSchema = z.object({
   end_date: z.number().int().optional(),
   goal: z.string().nullable().optional(),
   status: z.enum(['planning', 'active', 'completed']).optional(),
+  reviewed_at: z.number().int().nullable().optional(),
 });
 
 export async function GET(request: NextRequest, context: RouteContext) {

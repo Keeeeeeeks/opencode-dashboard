@@ -101,6 +101,7 @@ export interface Sprint {
   end_date: number;
   goal: string | null;
   status: 'planning' | 'active' | 'completed';
+  reviewed_at: number | null;
   project_id?: string | null;
   created_at: number;
   updated_at: number;
@@ -269,6 +270,7 @@ export interface DatabaseOperations {
   getTodoSprintMap(): Map<string, Array<{ id: string; name: string }>>;
   getSprintVelocity(sprintId: string): SprintVelocity;
   getActiveSprint(): Sprint | null;
+  getUnreviewedEndedSprints(): Sprint[];
 
   // Message operations
   createMessage(message: Omit<Message, 'id' | 'created_at'>): Message;

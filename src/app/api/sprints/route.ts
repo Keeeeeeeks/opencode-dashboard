@@ -10,6 +10,7 @@ const CreateSprintSchema = z.object({
   end_date: z.number().int(),
   goal: z.string().nullable().optional(),
   status: z.enum(['planning', 'active', 'completed']).optional(),
+  reviewed_at: z.number().int().nullable().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
       end_date: data.end_date,
       goal: data.goal ?? null,
       status: data.status ?? 'planning',
+      reviewed_at: data.reviewed_at ?? null,
     });
 
     eventBus.publish({
