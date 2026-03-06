@@ -24,13 +24,29 @@ function toDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+type DurationPreset = 7 | 14 | 21 | 28 | 'custom';
+
+const DURATION_OPTIONS: Array<{ value: DurationPreset; label: string }> = [
+  { value: 7, label: '1 week' },
+  { value: 14, label: '2 weeks' },
+  { value: 21, label: '3 weeks' },
+  { value: 28, label: '4 weeks' },
+  { value: 'custom', label: 'Custom' },
+];
+
+function addDaysToDate(date: string, days: number): string {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return toDateInputValue(d);
+}
+
 export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModalProps) {
   const now = new Date();
-  const twoWeeksOut = new Date(now.getTime() + 14 * 86400000);
 
   const [name, setName] = useState('');
+  const [durationPreset, setDurationPreset] = useState<DurationPreset>(7);
   const [startDate, setStartDate] = useState(toDateInputValue(now));
-  const [endDate, setEndDate] = useState(toDateInputValue(twoWeeksOut));
+  const [endDate, setEndDate] = useState(addDaysToDate(toDateInputValue(now), 7));
   const [goal, setGoal] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +97,27 @@ export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModa
 
   const reset = () => {
     setName('');
+    setDurationPreset(7);
     const n = new Date();
-    setStartDate(toDateInputValue(n));
-    setEndDate(toDateInputValue(new Date(n.getTime() + 14 * 86400000)));
+    const start = toDateInputValue(n);
+    setStartDate(start);
+    setEndDate(addDaysToDate(start, 7));
     setGoal('');
     setError(null);
+  };
+
+  const handleDurationChange = (preset: DurationPreset) => {
+    setDurationPreset(preset);
+    if (preset !== 'custom') {
+      setEndDate(addDaysToDate(startDate, preset));
+    }
+  };
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    if (durationPreset !== 'custom') {
+      setEndDate(addDaysToDate(value, durationPreset));
+    }
   };
 
   const handleSubmit = async (e?: FormEvent) => {
@@ -207,6 +239,35 @@ export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModa
             />
           </div>
 
+          <div>
+            <span
+              className="block text-sm font-medium mb-1.5"
+              style={{ color: 'var(--text)' }}
+            >
+              Duration
+            </span>
+            <div className="flex gap-1.5">
+              {DURATION_OPTIONS.map((opt) => {
+                const isActive = durationPreset === opt.value;
+                return (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => handleDurationChange(opt.value)}
+                    className="flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors"
+                    style={{
+                      background: isActive ? 'var(--accent-subtle)' : 'var(--bg)',
+                      color: isActive ? 'var(--accent)' : 'var(--muted)',
+                      border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="flex gap-3">
             <div className="flex-1">
               <label
@@ -220,7 +281,7 @@ export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModa
                 id="sprint-start"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => handleStartDateChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2"
                 style={{
@@ -245,9 +306,10 @@ export function CreateSprintModal({ open, onClose, onCreated }: CreateSprintModa
                 id="sprint-end"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => { setEndDate(e.target.value); setDurationPreset('custom'); }}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2"
+                disabled={durationPreset !== 'custom'}
+                className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 disabled:opacity-50"
                 style={{
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
