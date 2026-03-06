@@ -21,7 +21,16 @@ import type { KanbanBoardProps, Todo } from './types';
 
 const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'completed', 'icebox'];
 
-export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTodo, isLoading }: KanbanBoardProps) {
+export function KanbanBoard({
+  todos,
+  activeSprintId,
+  showArchived,
+  onToggleShowArchived,
+  onArchiveToggle,
+  onStatusChange,
+  onSelectTodo,
+  isLoading,
+}: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
@@ -139,6 +148,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
     <div data-has-projects={hasProjects}>
       <div className="mb-4 flex items-center gap-2">
         <button
+          type="button"
           onClick={() => setShowNewTicket(true)}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
           style={{
@@ -154,12 +164,23 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
 
         {activeSprintId ? (
           <span
-            className="ml-auto rounded-md px-2 py-1 text-xs font-medium"
+            className="rounded-md px-2 py-1 text-xs font-medium"
             style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}
           >
             Sprint Filter Active
           </span>
         ) : null}
+
+        <label className="ml-auto flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(event) => onToggleShowArchived(event.target.checked)}
+            className="h-3.5 w-3.5 rounded"
+            style={{ accentColor: 'var(--accent)' }}
+          />
+          Show archived
+        </label>
       </div>
 
       <NewTicketModal
@@ -187,6 +208,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
                   childTodosMap={childTodosMap}
                   expandedParents={expandedParents}
                   onToggleExpand={handleToggleExpand}
+                  onArchiveToggle={onArchiveToggle}
                 />
               </div>
             ))}
@@ -201,6 +223,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
                 isDragging
                 childCount={activeTodoChildCount}
                 isSubtask={!!activeTodo.parent_id}
+                onArchiveToggle={onArchiveToggle}
               />
               {activeTodoChildCount > 0 && (
                 <div

@@ -300,6 +300,9 @@ function initializeDatabase(): Database.Database {
   if (!columns.some((c) => c.name === 'name')) {
     db.exec('ALTER TABLE todos ADD COLUMN name TEXT');
   }
+  if (!columns.some((c) => c.name === 'archived_at')) {
+    db.exec('ALTER TABLE todos ADD COLUMN archived_at INTEGER');
+  }
 
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
   if (!messageColumns.some((c) => c.name === 'project_id')) {
@@ -420,7 +423,7 @@ function getDatabase(): Database.Database {
 }
 
 const db: DatabaseOperations = {
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo {
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at' | 'archived_at'>): Todo {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
 
@@ -438,8 +441,8 @@ const db: DatabaseOperations = {
     }
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, archived_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const completedAt = todo.status === 'completed' ? now : null;
@@ -455,6 +458,7 @@ const db: DatabaseOperations = {
       todo.project,
       todo.parent_id ?? null,
       completedAt,
+      null,
       now,
       now
     );
@@ -468,6 +472,7 @@ const db: DatabaseOperations = {
     return {
       ...todo,
       completed_at: completedAt,
+      archived_at: null,
       created_at: now,
       updated_at: now,
     };
@@ -479,9 +484,11 @@ const db: DatabaseOperations = {
     return (stmt.get(id) as Todo) || null;
   },
 
-  getAllTodos(): Todo[] {
+  getAllTodos(includeArchived = false): Todo[] {
     const database = getDatabase();
-    const stmt = database.prepare('SELECT * FROM todos ORDER BY created_at DESC');
+    const stmt = includeArchived
+      ? database.prepare('SELECT * FROM todos ORDER BY created_at DESC')
+      : database.prepare('SELECT * FROM todos WHERE archived_at IS NULL ORDER BY created_at DESC');
     return stmt.all() as Todo[];
   },
 
@@ -578,7 +585,7 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
+      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, archived_at = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -592,11 +599,20 @@ const db: DatabaseOperations = {
       updated.project,
       updated.parent_id ?? null,
       updated.completed_at,
+      updated.archived_at,
       now,
       id
     );
 
     return updated;
+  },
+
+  archiveTodo(id: string): Todo {
+    return db.updateTodo(id, { archived_at: Math.floor(Date.now() / 1000) });
+  },
+
+  unarchiveTodo(id: string): Todo {
+    return db.updateTodo(id, { archived_at: null });
   },
 
   logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry {

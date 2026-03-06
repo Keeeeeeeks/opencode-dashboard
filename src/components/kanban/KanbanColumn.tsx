@@ -26,7 +26,7 @@ const statusLabels: Record<Todo['status'], string> = {
   icebox: 'Icebox',
 };
 
-export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTodo, childTodosMap, expandedParents, onToggleExpand }: KanbanColumnProps) {
+export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTodo, childTodosMap, expandedParents, onToggleExpand, onArchiveToggle }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const [collapsed, setCollapsed] = useState(false);
 
@@ -64,7 +64,8 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
           : {}),
       }}
     >
-      <div
+      <button
+        type="button"
         className="sticky top-0 z-10 flex items-center justify-between p-3 backdrop-blur-md rounded-t-xl cursor-pointer select-none"
         style={{
           background: 'var(--glass-bg)',
@@ -92,7 +93,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
         >
           {todos.length}
         </span>
-      </div>
+      </button>
 
       {!collapsed && (
         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
@@ -119,6 +120,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
                         onToggleExpand={() => onToggleExpand(todo.id)}
                         onStatusChange={onStatusChange}
                         onSelectTodo={onSelectTodo}
+                        onArchiveToggle={onArchiveToggle}
                       />
                       {isExpanded && allChildren.length > 0 && (
                         <div
@@ -132,6 +134,7 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
                               isSubtask
                               onStatusChange={onStatusChange}
                               onSelectTodo={onSelectTodo}
+                              onArchiveToggle={onArchiveToggle}
                             />
                           ))}
                         </div>
@@ -140,7 +143,14 @@ export function KanbanColumn({ title, status, todos, onStatusChange, onSelectTod
                   );
                 })}
                 {orphanChildren.map((todo) => (
-                  <KanbanCard key={todo.id} todo={todo} isSubtask onStatusChange={onStatusChange} onSelectTodo={onSelectTodo} />
+                  <KanbanCard
+                    key={todo.id}
+                    todo={todo}
+                    isSubtask
+                    onStatusChange={onStatusChange}
+                    onSelectTodo={onSelectTodo}
+                    onArchiveToggle={onArchiveToggle}
+                  />
                 ))}
               </>
             )}

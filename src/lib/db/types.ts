@@ -13,6 +13,7 @@ export interface Todo {
   project: string | null;
   parent_id?: string | null;
   completed_at: number | null;
+  archived_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -237,13 +238,15 @@ export interface LinearWorkflowState {
  */
 export interface DatabaseOperations {
   // Todo operations
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo;
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at' | 'archived_at'>): Todo;
   getTodo(id: string): Todo | null;
-  getAllTodos(): Todo[];
+  getAllTodos(includeArchived?: boolean): Todo[];
   getChildTodos(parentId: string): Todo[];
   getTodoDepth(id: string): number;
   hasCircularReference(childId: string, proposedParentId: string): boolean;
   updateTodo(id: string, updates: Partial<Omit<Todo, 'id' | 'created_at'>>): Todo;
+  archiveTodo(id: string): Todo;
+  unarchiveTodo(id: string): Todo;
   deleteTodo(id: string): boolean;
   logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry;
   getStatusHistory(todoId: string): StatusHistoryEntry[];

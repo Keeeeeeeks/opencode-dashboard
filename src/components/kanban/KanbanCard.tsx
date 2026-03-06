@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDistanceToNow } from 'date-fns';
-import { GripVertical, Clock, User, FolderOpen, ChevronDown, ChevronRight, ListTree, MessageSquare, Timer, Check } from 'lucide-react';
+import { GripVertical, Clock, User, FolderOpen, ChevronDown, ChevronRight, ListTree, MessageSquare, Timer, Check, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDashboardStore } from '@/stores/dashboard';
 import type { KanbanCardProps, Todo } from './types';
@@ -26,7 +26,7 @@ const priorityStyles: Record<Todo['priority'], { bg: string; color: string }> = 
   low: { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' },
 };
 
-export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded, onToggleExpand, onStatusChange, onSelectTodo }: KanbanCardProps) {
+export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded, onToggleExpand, onStatusChange, onSelectTodo, onArchiveToggle }: KanbanCardProps) {
   const allSprints = useDashboardStore((s) => s.sprints);
   const [commentCount, setCommentCount] = useState(todo.comment_count || 0);
   const [sprintDropdownOpen, setSprintDropdownOpen] = useState(false);
@@ -97,6 +97,9 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
   return (
     <div
       ref={setNodeRef}
+      role="option"
+      aria-selected="false"
+      tabIndex={0}
       style={{
         ...style,
         background: isSubtask ? 'var(--card)' : 'var(--bg-elevated)',
@@ -111,6 +114,12 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
         dragging && 'opacity-80 rotate-2 scale-105'
       )}
       onClick={() => { if (!dragging) onSelectTodo?.(todo); }}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !dragging) {
+          e.preventDefault();
+          onSelectTodo?.(todo);
+        }
+      }}
       onMouseEnter={(e) => {
         if (!dragging) {
           e.currentTarget.style.borderColor = 'var(--border-strong)';
@@ -143,6 +152,7 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
           <div className="flex items-start gap-1.5">
             {hasChildren && (
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleExpand?.();
@@ -260,7 +270,6 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
                       borderColor: 'var(--border)',
                       boxShadow: 'var(--shadow-lg, 0 25px 50px -12px rgba(0,0,0,.5))',
                     }}
-                    onClick={(e) => e.stopPropagation()}
                   >
                     {allSprints.length === 0 ? (
                       <div className="px-3 py-2 text-xs" style={{ color: 'var(--muted)' }}>
@@ -332,6 +341,32 @@ export function KanbanCard({ todo, isDragging, childCount, isSubtask, isExpanded
                 {formatDistanceToNow(todo.updated_at * 1000, { addSuffix: true })}
               </span>
             )}
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchiveToggle?.(todo);
+              }}
+              className="inline-flex items-center justify-center rounded-md p-1 transition-colors"
+              style={{
+                color: todo.archived_at ? 'var(--accent)' : 'var(--muted)',
+                border: '1px solid var(--border)',
+                background: 'var(--bg)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+                e.currentTarget.style.borderColor = 'var(--border-strong)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--bg)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+              title={todo.archived_at ? 'Unarchive task' : 'Archive task'}
+              aria-label={todo.archived_at ? 'Unarchive task' : 'Archive task'}
+            >
+              <Archive className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       </div>

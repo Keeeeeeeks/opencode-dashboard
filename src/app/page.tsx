@@ -35,7 +35,8 @@ export default function Dashboard() {
     setSelectedProject,
     isConnected,
   } = useDashboardStore();
-  const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
+  const [showArchived, setShowArchived] = useState(false);
+  const { updateTodo, updateTodoStatus, markMessagesAsRead, fetchData } = usePolling(showArchived);
   const { isSSEConnected } = useSSE(fetchData);
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
@@ -110,6 +111,25 @@ export default function Dashboard() {
     markMessagesAsRead(ids);
     useDashboardStore.getState().markMessagesAsRead(ids);
   };
+
+  const handleArchiveToggle = useCallback(async (todo: Todo) => {
+    const archivedAt = todo.archived_at ? null : Math.floor(Date.now() / 1000);
+    await updateTodo(todo.id, { archived_at: archivedAt });
+    if (!showArchived && archivedAt !== null) {
+      setSelectedTodo(null);
+      return;
+    }
+    setSelectedTodo((prev) => {
+      if (!prev || prev.id !== todo.id) {
+        return prev;
+      }
+      return {
+        ...prev,
+        archived_at: archivedAt,
+        updated_at: Math.floor(Date.now() / 1000),
+      };
+    });
+  }, [showArchived, updateTodo]);
 
   const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
 
@@ -229,6 +249,7 @@ export default function Dashboard() {
                   ))}
                 </select>
                 <button
+                  type="button"
                   onClick={() => setNewSprintOpen(true)}
                   className="rounded-r-md px-2 py-1.5 transition-colors"
                   style={{
@@ -251,6 +272,7 @@ export default function Dashboard() {
               </div>
 
               <button
+                type="button"
                 onClick={toggleDark}
                 className="rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -308,6 +330,7 @@ export default function Dashboard() {
               ) : null}
 
               <button
+                type="button"
                 onClick={togglePanel}
                 className="hidden md:flex rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -319,6 +342,7 @@ export default function Dashboard() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="md:hidden rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -345,6 +369,7 @@ export default function Dashboard() {
                 return (
                   <button
                     key={tab.key}
+                    type="button"
                     onClick={() => setActiveTab(tab.key)}
                     className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all"
                     style={{
@@ -382,6 +407,7 @@ export default function Dashboard() {
                     </p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setNewTicketOpen(true)}
                     className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
                     style={{
@@ -409,6 +435,9 @@ export default function Dashboard() {
                 <KanbanBoard
                   todos={todos}
                   activeSprintId={activeSprint}
+                  showArchived={showArchived}
+                  onToggleShowArchived={setShowArchived}
+                  onArchiveToggle={handleArchiveToggle}
                   onStatusChange={handleStatusChange}
                   onSelectTodo={handleSelectTodo}
                   isLoading={isLoading}
@@ -468,9 +497,11 @@ export default function Dashboard() {
           </div>
 
           {sidebarOpen && (
-            <div
+            <button
+              type="button"
               className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
               onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
             />
           )}
         </div>
@@ -481,6 +512,7 @@ export default function Dashboard() {
           open={selectedTodo !== null}
           onClose={() => setSelectedTodo(null)}
           onStatusChange={handleStatusChange}
+          onArchiveToggle={handleArchiveToggle}
         />
       </div>
     </AuthGuard>
