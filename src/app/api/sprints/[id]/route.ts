@@ -56,13 +56,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const sprint = db.updateSprint(params.id, data);
 
+    let rolledOver = 0;
+    if (data.reviewed_at && data.status === 'completed') {
+      const activeSprint = db.getActiveSprint() ?? db.rotateSprintIfNeeded();
+      if (activeSprint && activeSprint.id !== params.id) {
+        rolledOver = db.rolloverIncompleteTodos(params.id, activeSprint.id);
+      }
+    }
+
     eventBus.publish({
       type: 'sprint:updated',
       payload: { sprint },
       timestamp: Date.now(),
     });
 
-    return NextResponse.json({ sprint }, { status: 200, headers: corsHeaders(request) });
+    return NextResponse.json({ sprint, rolled_over: rolledOver }, { status: 200, headers: corsHeaders(request) });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request body', details: error.issues }, { status: 400, headers: corsHeaders(request) });
