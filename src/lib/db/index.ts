@@ -804,6 +804,26 @@ const db: DatabaseOperations = {
     stmt.run(todoId, sprintId);
   },
 
+  rolloverIncompleteTodos(fromSprintId: string, toSprintId: string): number {
+    const database = getDatabase();
+    const todos = db.getSprintTodos(fromSprintId);
+    const incomplete = todos.filter(
+      (t) => (t.status === 'pending' || t.status === 'in_progress' || t.status === 'blocked') && !t.archived_at
+    );
+
+    const insertStmt = database.prepare(`
+      INSERT INTO todo_sprints (todo_id, sprint_id)
+      VALUES (?, ?)
+      ON CONFLICT(todo_id, sprint_id) DO NOTHING
+    `);
+
+    for (const todo of incomplete) {
+      insertStmt.run(todo.id, toSprintId);
+    }
+
+    return incomplete.length;
+  },
+
   removeTodoFromSprint(todoId: string, sprintId: string): void {
     const database = getDatabase();
     const stmt = database.prepare('DELETE FROM todo_sprints WHERE todo_id = ? AND sprint_id = ?');

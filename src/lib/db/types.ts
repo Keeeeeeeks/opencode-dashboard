@@ -263,6 +263,7 @@ export interface DatabaseOperations {
   getSprint(id: string): Sprint | null;
   getAllSprints(): Sprint[];
   updateSprint(id: string, updates: Partial<Omit<Sprint, 'id' | 'created_at'>>): Sprint;
+  rolloverIncompleteTodos(fromSprintId: string, toSprintId: string): number;
   assignTodoToSprint(todoId: string, sprintId: string): void;
   removeTodoFromSprint(todoId: string, sprintId: string): void;
   getSprintTodos(sprintId: string): Todo[];
