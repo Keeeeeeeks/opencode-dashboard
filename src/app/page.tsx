@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { KanbanBoard } from '@/components/kanban';
 import { MessageFeed } from '@/components/messages';
@@ -15,12 +15,25 @@ import { TaskDetailModal } from '@/components/kanban/TaskDetailModal';
 import { VelocityWidget } from '@/components/sprints/VelocityWidget';
 import { CreateSprintModal } from '@/components/sprints/CreateSprintModal';
 import { SprintHeader } from '@/components/sprints/SprintHeader';
+import { SprintReviewBanner } from '@/components/sprints/SprintReviewBanner';
 import { AgentPanel } from '@/components/agents';
 import { LinearBoard } from '@/components/linear';
 import type { Todo } from '@/components/kanban/types';
+import type { Sprint } from '@/lib/db/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 
 type DashboardTab = 'tasks' | 'agents' | 'linear';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
+
+function authHeaders(): HeadersInit {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (API_KEY) {
+    headers.Authorization = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
@@ -35,7 +48,8 @@ export default function Dashboard() {
     setSelectedProject,
     isConnected,
   } = useDashboardStore();
-  const { updateTodoStatus, markMessagesAsRead, fetchData } = usePolling();
+  const [showArchived, setShowArchived] = useState(false);
+  const { updateTodo, updateTodoStatus, markMessagesAsRead, fetchData } = usePolling(showArchived);
   const { isSSEConnected } = useSSE(fetchData);
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
@@ -45,6 +59,8 @@ export default function Dashboard() {
   const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('tasks');
+  const [reviewSprints, setReviewSprints] = useState<Sprint[]>([]);
+  const hasAutoSelectedSprint = useRef(false);
 
   useEffect(() => {
     const hasLight = document.documentElement.classList.contains('light');
@@ -56,6 +72,49 @@ export default function Dashboard() {
     const projectFromUrl = params.get('project');
     setSelectedProject(projectFromUrl || null);
   }, [setSelectedProject]);
+
+  useEffect(() => {
+    if (hasAutoSelectedSprint.current || sprints.length === 0) return;
+    hasAutoSelectedSprint.current = true;
+
+    const now = Math.floor(Date.now() / 1000);
+    const active = sprints.find(
+      (s) => s.status === 'active' && s.start_date <= now && now <= s.end_date
+    );
+    setActiveSprint((active ?? sprints[0]).id);
+  }, [sprints, setActiveSprint]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function fetchSprintsNeedingReview() {
+      try {
+        const response = await fetch(`${API_BASE}/api/sprints/needs-review`, {
+          headers: authHeaders(),
+        });
+        if (!response.ok || canceled) {
+          return;
+        }
+        const payload = (await response.json()) as { sprints: Sprint[] };
+        if (canceled) {
+          return;
+        }
+        const unreviewed = payload.sprints ?? [];
+        setReviewSprints(
+          unreviewed
+            .slice()
+            .sort((a, b) => (b.end_date !== a.end_date ? b.end_date - a.end_date : b.created_at - a.created_at))
+        );
+      } catch (error) {
+        console.error('Failed to load unreviewed ended sprints:', error);
+      }
+    }
+
+    void fetchSprintsNeedingReview();
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -98,6 +157,25 @@ export default function Dashboard() {
     markMessagesAsRead(ids);
     useDashboardStore.getState().markMessagesAsRead(ids);
   };
+
+  const handleArchiveToggle = useCallback(async (todo: Todo) => {
+    const archivedAt = todo.archived_at ? null : Math.floor(Date.now() / 1000);
+    await updateTodo(todo.id, { archived_at: archivedAt });
+    if (!showArchived && archivedAt !== null) {
+      setSelectedTodo(null);
+      return;
+    }
+    setSelectedTodo((prev) => {
+      if (!prev || prev.id !== todo.id) {
+        return prev;
+      }
+      return {
+        ...prev,
+        archived_at: archivedAt,
+        updated_at: Math.floor(Date.now() / 1000),
+      };
+    });
+  }, [showArchived, updateTodo]);
 
   const selectedSprint = activeSprint ? sprints.find((sprint) => sprint.id === activeSprint) : null;
 
@@ -217,6 +295,7 @@ export default function Dashboard() {
                   ))}
                 </select>
                 <button
+                  type="button"
                   onClick={() => setNewSprintOpen(true)}
                   className="rounded-r-md px-2 py-1.5 transition-colors"
                   style={{
@@ -239,6 +318,7 @@ export default function Dashboard() {
               </div>
 
               <button
+                type="button"
                 onClick={toggleDark}
                 className="rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -296,6 +376,7 @@ export default function Dashboard() {
               ) : null}
 
               <button
+                type="button"
                 onClick={togglePanel}
                 className="hidden md:flex rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -307,6 +388,7 @@ export default function Dashboard() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="md:hidden rounded-lg p-2 transition-colors"
                 style={{ color: 'var(--muted)' }}
@@ -319,6 +401,8 @@ export default function Dashboard() {
           </div>
         </div>
         </header>
+
+        {reviewSprints.length > 0 ? <SprintReviewBanner sprint={reviewSprints[0]} /> : null}
 
         <main className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 animate-dashboard-enter">
           <div className="flex flex-col gap-6 md:flex-row">
@@ -333,6 +417,7 @@ export default function Dashboard() {
                 return (
                   <button
                     key={tab.key}
+                    type="button"
                     onClick={() => setActiveTab(tab.key)}
                     className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all"
                     style={{
@@ -370,6 +455,7 @@ export default function Dashboard() {
                     </p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setNewTicketOpen(true)}
                     className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
                     style={{
@@ -397,6 +483,9 @@ export default function Dashboard() {
                 <KanbanBoard
                   todos={todos}
                   activeSprintId={activeSprint}
+                  showArchived={showArchived}
+                  onToggleShowArchived={setShowArchived}
+                  onArchiveToggle={handleArchiveToggle}
                   onStatusChange={handleStatusChange}
                   onSelectTodo={handleSelectTodo}
                   isLoading={isLoading}
@@ -456,9 +545,11 @@ export default function Dashboard() {
           </div>
 
           {sidebarOpen && (
-            <div
+            <button
+              type="button"
               className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
               onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
             />
           )}
         </div>
@@ -469,6 +560,7 @@ export default function Dashboard() {
           open={selectedTodo !== null}
           onClose={() => setSelectedTodo(null)}
           onStatusChange={handleStatusChange}
+          onArchiveToggle={handleArchiveToggle}
         />
       </div>
     </AuthGuard>

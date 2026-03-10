@@ -46,6 +46,9 @@ export function TaskDetailModal({
   task,
   tasks,
   subtasks,
+  sprints,
+  projects,
+  agents,
   onClose,
   onSave,
   onDelete,
@@ -63,6 +66,9 @@ export function TaskDetailModal({
   const [saving, setSaving] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [sprintId, setSprintId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [assignedAgentId, setAssignedAgentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!task || !open) {
@@ -75,6 +81,9 @@ export function TaskDetailModal({
     setPriority(task.priority);
     setDetails(task.details || '');
     setTestStrategy(task.test_strategy || '');
+    setSprintId(task.sprint_id || null);
+    setProjectId(task.project_id || null);
+    setAssignedAgentId(task.assigned_agent_id || null);
     setError(null);
     if (task.source !== 'v1') {
       void onFetchSubtasks(task.id);
@@ -195,6 +204,67 @@ export function TaskDetailModal({
               </select>
             </div>
           </div>
+
+          {!isV1Task && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                  Sprint
+                </label>
+                <select
+                  value={sprintId ?? ''}
+                  onChange={(event) => setSprintId(event.target.value || null)}
+                  className="w-full rounded-lg px-3 py-2 text-sm"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                >
+                  <option value="">None</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                  Project
+                </label>
+                <select
+                  value={projectId ?? ''}
+                  onChange={(event) => setProjectId(event.target.value || null)}
+                  className="w-full rounded-lg px-3 py-2 text-sm"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                >
+                  <option value="">None</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                  Agent
+                </label>
+                <select
+                  value={assignedAgentId ?? ''}
+                  onChange={(event) => setAssignedAgentId(event.target.value || null)}
+                  className="w-full rounded-lg px-3 py-2 text-sm"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {!isV1Task && (
             <div>
@@ -369,6 +439,9 @@ export function TaskDetailModal({
                         priority,
                         details: details.trim() || null,
                         test_strategy: testStrategy.trim() || null,
+                        sprint_id: sprintId,
+                        project_id: projectId,
+                        assigned_agent_id: assignedAgentId,
                       };
                   await onSave(task.id, saveUpdates);
                   onClose();

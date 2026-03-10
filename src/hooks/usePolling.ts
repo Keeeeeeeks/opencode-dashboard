@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useDashboardStore } from '@/stores/dashboard';
+import type { Todo } from '@/components/kanban/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 const API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
@@ -14,7 +15,7 @@ function authHeaders(): HeadersInit {
   return headers;
 }
 
-export function usePolling() {
+export function usePolling(includeArchived = false) {
   const {
     setTodos,
     setMessages,
@@ -47,6 +48,9 @@ export function usePolling() {
       }
       if (selectedProject) {
         todosParams.set('project', selectedProject);
+      }
+      if (includeArchived) {
+        todosParams.set('include_archived', 'true');
       }
 
       const projectsRequest = fetch(`${API_BASE}/api/settings/projects`, {
@@ -137,6 +141,7 @@ export function usePolling() {
     activeSprint,
     currentSessionId,
     selectedProject,
+    includeArchived,
     setTodos,
     setMessages,
     setSprints,
@@ -153,13 +158,13 @@ export function usePolling() {
     fetchData();
   }, [fetchData]);
 
-  const updateTodoStatus = useCallback(
-    async (id: string, status: string) => {
+  const updateTodo = useCallback(
+    async (id: string, updates: Partial<Pick<Todo, 'status' | 'archived_at'>>) => {
       try {
         const res = await fetch(`${API_BASE}/api/todos`, {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ id, status }),
+          body: JSON.stringify({ id, ...updates }),
         });
 
         if (!res.ok) throw new Error('Failed to update todo');
@@ -170,6 +175,13 @@ export function usePolling() {
       }
     },
     [fetchData]
+  );
+
+  const updateTodoStatus = useCallback(
+    async (id: string, status: string) => {
+      await updateTodo(id, { status: status as Todo['status'] });
+    },
+    [updateTodo]
   );
 
   const markMessagesAsRead = useCallback(
@@ -193,6 +205,7 @@ export function usePolling() {
 
   return {
     fetchData,
+    updateTodo,
     updateTodoStatus,
     markMessagesAsRead,
   };

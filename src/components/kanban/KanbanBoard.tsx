@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { Plus, ListTree } from 'lucide-react';
+import { Plus, ListTree, Search } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { NewTicketModal } from './NewTicketModal';
@@ -21,10 +21,20 @@ import type { KanbanBoardProps, Todo } from './types';
 
 const columns: Todo['status'][] = ['pending', 'in_progress', 'blocked', 'completed', 'icebox'];
 
-export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTodo, isLoading }: KanbanBoardProps) {
+export function KanbanBoard({
+  todos,
+  activeSprintId,
+  showArchived,
+  onToggleShowArchived,
+  onArchiveToggle,
+  onStatusChange,
+  onSelectTodo,
+  isLoading,
+}: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
   const projects = useMemo(() => {
     const set = new Set<string>();
@@ -33,7 +43,17 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
   }, [todos]);
 
   const hasProjects = projects.length > 0;
-  const filteredTodos = useMemo(() => todos, [todos]);
+  const filteredTodos = useMemo(() => {
+    if (!searchQuery.trim()) return todos;
+    const q = searchQuery.toLowerCase();
+    return todos.filter((t) => {
+      const name = t.name?.toLowerCase() ?? '';
+      const content = t.content.toLowerCase();
+      const agent = t.agent?.toLowerCase() ?? '';
+      const project = t.project?.toLowerCase() ?? '';
+      return name.includes(q) || content.includes(q) || agent.includes(q) || project.includes(q);
+    });
+  }, [todos, searchQuery]);
 
   const childTodosMap = useMemo(() => {
     const map = new Map<string, Todo[]>();
@@ -139,6 +159,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
     <div data-has-projects={hasProjects}>
       <div className="mb-4 flex items-center gap-2">
         <button
+          type="button"
           onClick={() => setShowNewTicket(true)}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
           style={{
@@ -152,14 +173,46 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
           New Ticket
         </button>
 
+        <div className="relative flex-1 max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+            style={{ color: 'var(--muted)' }}
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search tasks..."
+            className="w-full rounded-lg py-1.5 pl-8 pr-3 text-xs outline-none transition-colors focus:ring-2"
+            style={{
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              // @ts-expect-error CSS custom property
+              '--tw-ring-color': 'var(--accent)',
+            }}
+          />
+        </div>
+
         {activeSprintId ? (
           <span
-            className="ml-auto rounded-md px-2 py-1 text-xs font-medium"
+            className="rounded-md px-2 py-1 text-xs font-medium"
             style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}
           >
             Sprint Filter Active
           </span>
         ) : null}
+
+        <label className="ml-auto flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(event) => onToggleShowArchived(event.target.checked)}
+            className="h-3.5 w-3.5 rounded"
+            style={{ accentColor: 'var(--accent)' }}
+          />
+          Show archived
+        </label>
       </div>
 
       <NewTicketModal
@@ -187,6 +240,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
                   childTodosMap={childTodosMap}
                   expandedParents={expandedParents}
                   onToggleExpand={handleToggleExpand}
+                  onArchiveToggle={onArchiveToggle}
                 />
               </div>
             ))}
@@ -201,6 +255,7 @@ export function KanbanBoard({ todos, activeSprintId, onStatusChange, onSelectTod
                 isDragging
                 childCount={activeTodoChildCount}
                 isSubtask={!!activeTodo.parent_id}
+                onArchiveToggle={onArchiveToggle}
               />
               {activeTodoChildCount > 0 && (
                 <div

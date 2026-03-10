@@ -23,8 +23,8 @@ The dashboard polls every 3 seconds, runs in dark mode, and binds to 127.0.0.1 b
 ## Quick Start
 
 ```bash
-git clone https://github.com/Keeeeeeeks/opencode-dashboard.git
-cd opencode-dashboard
+git clone https://github.com/clawdina/openclaw-dashboard.git
+cd openclaw-dashboard
 bun install
 cp .env.example .env.local
 # Edit .env.local -- set DASHBOARD_API_KEY=$(openssl rand -hex 32)

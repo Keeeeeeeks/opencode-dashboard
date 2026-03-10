@@ -3,22 +3,25 @@ import { z } from 'zod';
 import db from '@/lib/db';
 import { checkRateLimit, corsHeaders, validateAuth } from '@/lib/auth/middleware';
 import { eventBus } from '@/lib/events/eventBus';
+import type { Todo } from '@/lib/db/types';
 
 const CreateTodoSchema = z.object({
   id: z.string().optional(),
-  name: z.string().optional(),
-  content: z.string(),
+  name: z.string().nullable().optional(),
+  content: z.string().optional(),
   status: z.enum(['pending', 'in_progress', 'blocked', 'completed', 'cancelled', 'icebox']).optional(),
   priority: z.enum(['low', 'medium', 'high']).optional(),
-  agent: z.string().optional(),
+  agent: z.string().nullable().optional(),
   project: z.string().nullable().optional(),
   parent_id: z.string().nullable().optional(),
-  session_id: z.string().optional(),
+  session_id: z.string().nullable().optional(),
   sprint_id: z.string().optional(),
+  archived_at: z.number().int().nullable().optional(),
 });
 
 const BatchTodoSchema = CreateTodoSchema.extend({
   id: z.string(),
+  content: z.string(),
 });
 
 const BatchTodosRequestSchema = z.object({
@@ -58,8 +61,10 @@ export async function GET(request: NextRequest) {
     const sprintIdParam = searchParams.get('sprint_id');
     const parentIdParam = searchParams.get('parent_id');
     const topLevelParam = searchParams.get('top_level');
+    const includeArchivedParam = searchParams.get('include_archived');
+    const includeArchived = includeArchivedParam === 'true';
 
-    let todos = db.getAllTodos();
+    let todos = db.getAllTodos(includeArchived);
 
     if (sessionId) {
       todos = todos.filter((t) => t.session_id === sessionId);
@@ -139,32 +144,41 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = CreateTodoSchema.parse(body);
 
-    let todo;
+    let todo: Todo;
     let autoSprintId: string | null = null;
 
     if (data.id) {
-      todo = db.updateTodo(data.id, {
-        name: data.name ?? null,
-        content: data.content,
-        status: data.status || 'pending',
-        priority: data.priority || 'medium',
-        agent: data.agent || null,
-        project: data.project ?? null,
-        parent_id: data.parent_id ?? null,
-        session_id: data.session_id || null,
-        updated_at: Date.now(),
-      });
+      const updates: Partial<Omit<Todo, 'id' | 'created_at'>> = {};
+
+      if (data.name !== undefined) updates.name = data.name;
+      if (data.content !== undefined) updates.content = data.content;
+      if (data.status !== undefined) updates.status = data.status;
+      if (data.priority !== undefined) updates.priority = data.priority;
+      if (data.agent !== undefined) updates.agent = data.agent;
+      if (data.project !== undefined) updates.project = data.project;
+      if (data.parent_id !== undefined) updates.parent_id = data.parent_id;
+      if (data.session_id !== undefined) updates.session_id = data.session_id;
+      if (data.archived_at !== undefined) updates.archived_at = data.archived_at;
+
+      todo = db.updateTodo(data.id, updates);
     } else {
+      if (!data.content) {
+        return NextResponse.json(
+          { error: 'content is required when creating a todo' },
+          { status: 400, headers: corsHeaders(request) }
+        );
+      }
+
       todo = db.createTodo({
         id: `todo_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         name: data.name ?? null,
         content: data.content,
         status: data.status || 'pending',
         priority: data.priority || 'medium',
-        agent: data.agent || null,
+        agent: data.agent ?? null,
         project: data.project ?? null,
         parent_id: data.parent_id ?? null,
-        session_id: data.session_id || null,
+        session_id: data.session_id ?? null,
       });
 
       if (!data.sprint_id) {
@@ -264,6 +278,11 @@ export async function PUT(request: NextRequest) {
           });
           if (todoData.sprint_id) {
             db.assignTodoToSprint(todoData.id, todoData.sprint_id);
+          } else {
+            const activeSprint = db.getActiveSprint();
+            if (activeSprint) {
+              db.assignTodoToSprint(todoData.id, activeSprint.id);
+            }
           }
         results.push({ id: todoData.id, action: 'created' });
       }

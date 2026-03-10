@@ -13,6 +13,7 @@ export interface Todo {
   project: string | null;
   parent_id?: string | null;
   completed_at: number | null;
+  archived_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -64,6 +65,7 @@ export interface Task {
   assigned_agent_id: string | null;
   linear_issue_id: string | null;
   project_id?: string | null;
+  sprint_id?: string | null;
   /** Distinguishes v1 legacy todos from native v2 tasks */
   source?: 'v1' | 'v2';
   /** Original V1 todo string ID (only present when source === 'v1') */
@@ -99,6 +101,7 @@ export interface Sprint {
   end_date: number;
   goal: string | null;
   status: 'planning' | 'active' | 'completed';
+  reviewed_at: number | null;
   project_id?: string | null;
   created_at: number;
   updated_at: number;
@@ -236,13 +239,15 @@ export interface LinearWorkflowState {
  */
 export interface DatabaseOperations {
   // Todo operations
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo;
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at' | 'archived_at'>): Todo;
   getTodo(id: string): Todo | null;
-  getAllTodos(): Todo[];
+  getAllTodos(includeArchived?: boolean): Todo[];
   getChildTodos(parentId: string): Todo[];
   getTodoDepth(id: string): number;
   hasCircularReference(childId: string, proposedParentId: string): boolean;
   updateTodo(id: string, updates: Partial<Omit<Todo, 'id' | 'created_at'>>): Todo;
+  archiveTodo(id: string): Todo;
+  unarchiveTodo(id: string): Todo;
   deleteTodo(id: string): boolean;
   logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry;
   getStatusHistory(todoId: string): StatusHistoryEntry[];
@@ -265,6 +270,8 @@ export interface DatabaseOperations {
   getTodoSprintMap(): Map<string, Array<{ id: string; name: string }>>;
   getSprintVelocity(sprintId: string): SprintVelocity;
   getActiveSprint(): Sprint | null;
+  rotateSprintIfNeeded(): Sprint | null;
+  getUnreviewedEndedSprints(): Sprint[];
 
   // Message operations
   createMessage(message: Omit<Message, 'id' | 'created_at'>): Message;

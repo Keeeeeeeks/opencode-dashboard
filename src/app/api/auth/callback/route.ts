@@ -111,23 +111,54 @@ export async function GET(request: NextRequest) {
     });
   } else {
     const userCount = db.getUserCount();
-    if (userCount > 0) {
-      const unauthorized = NextResponse.json(
-        { error: 'Not authorized. Ask an admin for an invite.' },
-        { status: 403 }
-      );
-      unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_STATE_COOKIE_NAME));
-      unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_REDIRECT_COOKIE_NAME));
-      return unauthorized;
-    }
+    if (userCount === 0) {
+      // First user to sign in becomes the owner
+      user = db.createUser({
+        github_id: githubUser.id,
+        username: githubUser.login,
+        display_name: githubUser.name,
+        avatar_url: githubUser.avatar_url,
+        role: 'owner',
+      });
+    } else {
+      // Check if this login is associated with a valid invite link
+      const incomingRedirect = safeRedirectPath(redirectCookie);
+      const inviteMatch = incomingRedirect.match(/\/invite\/([a-f0-9]+)\/accept$/);
 
-    user = db.createUser({
-      github_id: githubUser.id,
-      username: githubUser.login,
-      display_name: githubUser.name,
-      avatar_url: githubUser.avatar_url,
-      role: 'owner',
-    });
+      if (!inviteMatch) {
+        const unauthorized = NextResponse.json(
+          { error: 'Not authorized. Ask an admin for an invite.' },
+          { status: 403 }
+        );
+        unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_STATE_COOKIE_NAME));
+        unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_REDIRECT_COOKIE_NAME));
+        return unauthorized;
+      }
+
+      const inviteId = inviteMatch[1];
+      const invite = db.getInviteLink(inviteId);
+      const now = Math.floor(Date.now() / 1000);
+
+      if (!invite || invite.used_by !== null || invite.expires_at < now) {
+        const unauthorized = NextResponse.json(
+          { error: 'Invite link is invalid, expired, or already used.' },
+          { status: 403 }
+        );
+        unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_STATE_COOKIE_NAME));
+        unauthorized.headers.append('Set-Cookie', clearOAuthCookie(OAUTH_REDIRECT_COOKIE_NAME));
+        return unauthorized;
+      }
+
+      // Create user with viewer role; the /invite/[id]/accept endpoint
+      // will upgrade to the invite's role and mark the link as used.
+      user = db.createUser({
+        github_id: githubUser.id,
+        username: githubUser.login,
+        display_name: githubUser.name,
+        avatar_url: githubUser.avatar_url,
+        role: 'viewer',
+      });
+    }
   }
 
   const rawSessionToken = generateSessionToken();

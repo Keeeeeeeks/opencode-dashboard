@@ -15,6 +15,7 @@ import {
   CalendarCheck,
   CalendarClock,
   Activity,
+  Archive,
 } from 'lucide-react';
 import { TodoRefChip } from '@/components/messages/TodoRefChip';
 import { Toast } from '@/components/ui/Toast';
@@ -36,6 +37,7 @@ interface TaskDetailModalProps {
   open: boolean;
   onClose: () => void;
   onStatusChange: (id: string, status: Todo['status']) => void;
+  onArchiveToggle: (todo: Todo) => Promise<void> | void;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
@@ -93,12 +95,13 @@ function formatTimestamp(ts: number): string {
   return format(ts * 1000, 'MMM d, yyyy · h:mm a');
 }
 
-export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDetailModalProps) {
+export function TaskDetailModal({ todo, open, onClose, onStatusChange, onArchiveToggle }: TaskDetailModalProps) {
   const [comments, setComments] = useState<TodoComment[]>([]);
   const [body, setBody] = useState('');
   const [author, setAuthor] = useState('clawdina');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -175,6 +178,19 @@ export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDet
     }
   };
 
+  const handleArchiveToggle = async () => {
+    if (!todo || archiving) return;
+    setArchiving(true);
+    try {
+      await onArchiveToggle(todo);
+      if (todo.archived_at === null) {
+        onClose();
+      }
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   const commentItems = useMemo(
     () =>
       comments.map((comment) => {
@@ -237,10 +253,14 @@ export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDet
     <>
       <div
         className="fixed inset-0 z-[100] flex items-start justify-center pt-[8vh] px-4"
-        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={onClose}
+          aria-label="Close task details"
+        />
 
         {/* Modal panel */}
         <div
@@ -275,6 +295,7 @@ export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDet
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
               className="rounded-lg p-1.5 transition-colors shrink-0 mt-0.5"
               style={{ color: 'var(--muted)' }}
@@ -497,24 +518,43 @@ export function TaskDetailModal({ todo, open, onClose, onStatusChange }: TaskDet
               />
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
-                ⌘+Enter to send
-              </span>
               <button
                 type="button"
-                onClick={handleSubmit}
-                disabled={!canSubmit}
+                onClick={handleArchiveToggle}
+                disabled={archiving}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                  !canSubmit && 'cursor-not-allowed opacity-40'
+                  archiving && 'cursor-not-allowed opacity-50'
                 )}
-                style={{ background: 'var(--accent)', color: '#fff' }}
-                onMouseEnter={(e) => { if (canSubmit) e.currentTarget.style.opacity = '0.85'; }}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                style={{
+                  background: todo.archived_at ? 'var(--accent-subtle)' : 'var(--bg-hover)',
+                  color: todo.archived_at ? 'var(--accent)' : 'var(--muted)',
+                  border: '1px solid var(--border)',
+                }}
               >
-                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Comment
+                {archiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                {todo.archived_at ? 'Unarchive' : 'Archive'}
               </button>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                  ⌘+Enter to send
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                    !canSubmit && 'cursor-not-allowed opacity-40'
+                  )}
+                  style={{ background: 'var(--accent)', color: '#fff' }}
+                  onMouseEnter={(e) => { if (canSubmit) e.currentTarget.style.opacity = '0.85'; }}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Comment
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -235,6 +235,7 @@ function initializeDatabase(): Database.Database {
       end_date INTEGER NOT NULL,
       goal TEXT,
       status TEXT DEFAULT 'planning',
+      reviewed_at INTEGER,
       project_id TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
       updated_at INTEGER DEFAULT (unixepoch())
@@ -300,6 +301,9 @@ function initializeDatabase(): Database.Database {
   if (!columns.some((c) => c.name === 'name')) {
     db.exec('ALTER TABLE todos ADD COLUMN name TEXT');
   }
+  if (!columns.some((c) => c.name === 'archived_at')) {
+    db.exec('ALTER TABLE todos ADD COLUMN archived_at INTEGER');
+  }
 
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
   if (!messageColumns.some((c) => c.name === 'project_id')) {
@@ -315,10 +319,16 @@ function initializeDatabase(): Database.Database {
   if (!taskColumns.some((c) => c.name === 'project_id')) {
     db.exec('ALTER TABLE tasks ADD COLUMN project_id TEXT');
   }
+  if (!taskColumns.some((c) => c.name === 'sprint_id')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN sprint_id TEXT');
+  }
 
   const sprintColumns = db.prepare('PRAGMA table_info(sprints)').all() as Array<{ name: string }>;
   if (!sprintColumns.some((c) => c.name === 'project_id')) {
     db.exec('ALTER TABLE sprints ADD COLUMN project_id TEXT');
+  }
+  if (!sprintColumns.some((c) => c.name === 'reviewed_at')) {
+    db.exec('ALTER TABLE sprints ADD COLUMN reviewed_at INTEGER');
   }
 
   const todoCommentColumns = db.prepare('PRAGMA table_info(todo_comments)').all() as Array<{ name: string }>;
@@ -417,7 +427,7 @@ function getDatabase(): Database.Database {
 }
 
 const db: DatabaseOperations = {
-  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at'>): Todo {
+  createTodo(todo: Omit<Todo, 'created_at' | 'updated_at' | 'completed_at' | 'archived_at'>): Todo {
     const database = getDatabase();
     const now = Math.floor(Date.now() / 1000);
 
@@ -435,8 +445,8 @@ const db: DatabaseOperations = {
     }
 
     const stmt = database.prepare(`
-      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO todos (id, name, session_id, content, status, priority, agent, project, parent_id, completed_at, archived_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const completedAt = todo.status === 'completed' ? now : null;
@@ -452,6 +462,7 @@ const db: DatabaseOperations = {
       todo.project,
       todo.parent_id ?? null,
       completedAt,
+      null,
       now,
       now
     );
@@ -465,6 +476,7 @@ const db: DatabaseOperations = {
     return {
       ...todo,
       completed_at: completedAt,
+      archived_at: null,
       created_at: now,
       updated_at: now,
     };
@@ -476,9 +488,11 @@ const db: DatabaseOperations = {
     return (stmt.get(id) as Todo) || null;
   },
 
-  getAllTodos(): Todo[] {
+  getAllTodos(includeArchived = false): Todo[] {
     const database = getDatabase();
-    const stmt = database.prepare('SELECT * FROM todos ORDER BY created_at DESC');
+    const stmt = includeArchived
+      ? database.prepare('SELECT * FROM todos ORDER BY created_at DESC')
+      : database.prepare('SELECT * FROM todos WHERE archived_at IS NULL ORDER BY created_at DESC');
     return stmt.all() as Todo[];
   },
 
@@ -575,7 +589,7 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE todos
-      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, updated_at = ?
+      SET name = ?, session_id = ?, content = ?, status = ?, priority = ?, agent = ?, project = ?, parent_id = ?, completed_at = ?, archived_at = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -589,11 +603,20 @@ const db: DatabaseOperations = {
       updated.project,
       updated.parent_id ?? null,
       updated.completed_at,
+      updated.archived_at,
       now,
       id
     );
 
     return updated;
+  },
+
+  archiveTodo(id: string): Todo {
+    return db.updateTodo(id, { archived_at: Math.floor(Date.now() / 1000) });
+  },
+
+  unarchiveTodo(id: string): Todo {
+    return db.updateTodo(id, { archived_at: null });
   },
 
   logStatusChange(entry: Omit<StatusHistoryEntry, 'id'>): StatusHistoryEntry {
@@ -691,8 +714,8 @@ const db: DatabaseOperations = {
     const now = Math.floor(Date.now() / 1000);
 
     const stmt = database.prepare(`
-      INSERT INTO sprints (id, name, start_date, end_date, goal, status, project_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sprints (id, name, start_date, end_date, goal, status, reviewed_at, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -702,6 +725,7 @@ const db: DatabaseOperations = {
       sprint.end_date,
       sprint.goal,
       sprint.status,
+      sprint.reviewed_at,
       sprint.project_id ?? null,
       now,
       now
@@ -739,11 +763,21 @@ const db: DatabaseOperations = {
 
     const stmt = database.prepare(`
       UPDATE sprints
-      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, project_id = ?, updated_at = ?
+      SET name = ?, start_date = ?, end_date = ?, goal = ?, status = ?, reviewed_at = ?, project_id = ?, updated_at = ?
       WHERE id = ?
     `);
 
-    stmt.run(updated.name, updated.start_date, updated.end_date, updated.goal, updated.status, updated.project_id ?? null, now, id);
+    stmt.run(
+      updated.name,
+      updated.start_date,
+      updated.end_date,
+      updated.goal,
+      updated.status,
+      updated.reviewed_at,
+      updated.project_id ?? null,
+      now,
+      id
+    );
 
     return updated;
   },
@@ -884,6 +918,49 @@ const db: DatabaseOperations = {
     const activeSprints = stmt.all('active') as Sprint[];
 
     return activeSprints.find((sprint) => sprint.start_date <= now && now <= sprint.end_date) ?? null;
+  },
+
+  rotateSprintIfNeeded(): Sprint | null {
+    const active = db.getActiveSprint();
+    if (active) return active;
+
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare('SELECT * FROM sprints ORDER BY end_date DESC, created_at DESC LIMIT 1');
+    const latest = stmt.get() as Sprint | undefined;
+
+    if (!latest || latest.end_date >= now) return null;
+
+    const duration = latest.end_date - latest.start_date;
+    const sprintNumber = (() => {
+      const match = latest.name.match(/(\d+)/);
+      return match ? parseInt(match[1], 10) + 1 : 1;
+    })();
+
+    const newSprint = db.createSprint({
+      id: `sprint_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      name: `Sprint ${sprintNumber}`,
+      start_date: latest.end_date,
+      end_date: latest.end_date + duration,
+      goal: null,
+      status: 'active',
+      reviewed_at: null,
+      project_id: latest.project_id,
+    });
+
+    return newSprint;
+  },
+
+  getUnreviewedEndedSprints(): Sprint[] {
+    const database = getDatabase();
+    const now = Math.floor(Date.now() / 1000);
+    const stmt = database.prepare(`
+      SELECT *
+      FROM sprints
+      WHERE status = 'active' AND end_date < ? AND reviewed_at IS NULL
+      ORDER BY end_date DESC, created_at DESC
+    `);
+    return stmt.all(now) as Sprint[];
   },
 
   createMessage(message: Omit<Message, 'id' | 'created_at'>): Message {
@@ -1282,10 +1359,11 @@ const db: DatabaseOperations = {
         assigned_agent_id,
         linear_issue_id,
         project_id,
+        sprint_id,
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -1301,6 +1379,7 @@ const db: DatabaseOperations = {
       task.assigned_agent_id,
       task.linear_issue_id,
       task.project_id ?? null,
+      task.sprint_id ?? null,
       now,
       now
     );
@@ -1356,6 +1435,7 @@ const db: DatabaseOperations = {
         assigned_agent_id = ?,
         linear_issue_id = ?,
         project_id = ?,
+        sprint_id = ?,
         updated_at = ?
       WHERE id = ?
     `);
@@ -1373,6 +1453,7 @@ const db: DatabaseOperations = {
       updated.assigned_agent_id,
       updated.linear_issue_id,
       updated.project_id ?? null,
+      updated.sprint_id ?? null,
       now,
       id
     );

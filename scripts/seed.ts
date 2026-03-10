@@ -129,6 +129,7 @@ async function main() {
     end_date: sprintWindow.end,
     goal: 'Validate hierarchy, comments, and velocity workflows',
     status: 'active',
+    reviewed_at: null,
   });
   log(`Created sprint: ${sprint.id}`);
 

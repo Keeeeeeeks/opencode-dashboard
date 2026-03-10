@@ -10,6 +10,7 @@ export interface Todo {
   comment_count?: number;
   session_id?: string | null;
   completed_at?: number | null;
+  archived_at: number | null;
   sprints?: Array<{ id: string; name: string }>;
   created_at: number;
   updated_at: number;
@@ -18,6 +19,9 @@ export interface Todo {
 export interface KanbanBoardProps {
   todos: Todo[];
   activeSprintId?: string | null;
+  showArchived: boolean;
+  onToggleShowArchived: (showArchived: boolean) => void;
+  onArchiveToggle: (todo: Todo) => void;
   onStatusChange: (id: string, newStatus: Todo['status']) => void;
   onSelectTodo?: (todo: Todo) => void;
   isLoading?: boolean;
@@ -32,6 +36,7 @@ export interface KanbanColumnProps {
   childTodosMap: Map<string, Todo[]>;
   expandedParents: Set<string>;
   onToggleExpand: (parentId: string) => void;
+  onArchiveToggle: (todo: Todo) => void;
 }
 
 export interface KanbanCardProps {
@@ -43,4 +48,5 @@ export interface KanbanCardProps {
   onToggleExpand?: () => void;
   onStatusChange?: (id: string, status: Todo['status']) => void;
   onSelectTodo?: (todo: Todo) => void;
+  onArchiveToggle?: (todo: Todo) => void;
 }
